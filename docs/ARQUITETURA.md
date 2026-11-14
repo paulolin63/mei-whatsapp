@@ -1,0 +1,204 @@
+# ARQUITETURA — Contador MEI no WhatsApp (v0.1)
+
+## 1. Visão geral
+
+```
+Usuário (WhatsApp)
+      │  mensagem (texto / foto)
+      ▼
+Meta — WhatsApp Cloud API
+      │  POST /webhook
+      ▼
+┌─────────────┐   parse    ┌──────────────┐
+│  index.ts   │ ─────────► │ webhook.ts   │  roteador
+│  (Express)  │            │  (router)    │
+└─────────────┘            └──────┬───────┘
+                                  │ texto → Q&A stub
+                                  │ foto  → OCR stub + classificador
+                    ┌─────────────┼──────────────┐
+                    ▼             ▼              ▼
+              ┌──────────┐  ┌──────────┐  ┌──────────┐
+              │ mei/     │  │ receipts/│  │ store/   │
+              │ das.ts   │  │ classify │  │ db.ts    │
+              │ nfse.ts  │  │ ocr.ts   │  │ (JSON)   │
+              └──────────┘  └──────────┘  └──────────┘
+                                  │
+                                  ▼
+                           ┌──────────────┐
+                           │ client.ts    │ ──► Meta Graph API
+                           │ (envio)      │     (resposta)
+                           └──────────────┘
+```
+
+Separação de responsabilidades: o `webhook.ts` nunca fala com a API da
+Meta diretamente (só via `client.ts`); as regras de MEI nunca importam
+Express; o store nunca é acessado fora de `store/db.ts`.
+
+## 2. Componentes
+
+| Módulo | Papel | Dependências |
+|---|---|---|
+| `src/index.ts` | Servidor Express; verificação do webhook; ack rápido (200) antes de processar | express, config, webhook, client |
+| `src/config.ts` | Variáveis de ambiente com defaults seguros | dotenv |
+| `src/types.ts` | Tipos de domínio (sem imports de framework) | — |
+| `src/whatsapp/client.ts` | Envio de texto via Graph API; no-op com log se não configurado | fetch global, config |
+| `src/whatsapp/webhook.ts` | Parse do payload da Meta; roteamento texto/foto; Q&A por palavras-chave | classify, ocr, das, nfse, store |
+| `src/mei/das.ts` | Regras do DAS: dia 20, dia útil, teto R$ 81 mil, proporcional | — |
+| `src/mei/nfse.ts` | Cadastro de NFS-e por município (dados, não lei) | — |
+| `src/receipts/classify.ts` | Classificador por palavras-chave + interface `ReceiptClassifier` | types |
+| `src/receipts/ocr.ts` | Interface `OcrProvider` + stub sem provedor | — |
+| `src/store/db.ts` | JSON store em `data/store.json`; interface de repositório | config, types |
+| `src/jobs/reminders.ts` | Geração pura de lembretes (DAS ≤ 7 dias; alerta de teto ≥ 90%) | das |
+
+## 3. Fluxo do webhook (WhatsApp Cloud API)
+
+1. **Verificação** — Meta envia `GET /webhook?hub.mode=subscribe&
+   hub.verify_token=...&hub.challenge=...`. O servidor devolve o
+   `challenge` somente se o token conferir com `WHATSAPP_VERIFY_TOKEN`.
+2. **Recebimento** — Meta envia `POST /webhook` com o evento. O
+   servidor responde `200` imediatamente (a Meta exige resposta rápida)
+   e processa em seguida, sem bloquear a resposta.
+3. **Parse** — `parseWebhookBody()` extrai `entry[].changes[].value.
+   messages[]` e normaliza para `IncomingMessage` (texto, imagem ou
+   `unsupported`). Eventos de status (entregue/lido) são ignorados.
+4. **Roteamento** — texto vai para `answerQuestion()`; foto vai para
+   `handleReceiptPhoto()`; outros tipos recebem uma resposta educada.
+5. **Resposta** — `sendTextMessage()` posta na Graph API. Sem token
+   configurado, apenas loga (modo desenvolvimento).
+
+## 4. Fluxo de mensagem (texto)
+
+```
+"quando vence o DAS?"
+  → Q&A detecta "das"/"vencimento"
+  → nextDueDate() (dia 20 ou próximo dia útil)
+  → resposta com a data + aviso de que o valor depende da atividade
+  + disclaimer (contador tem a palavra final)
+```
+
+## 5. Fluxo de mensagem (foto de comprovante)
+
+```
+foto (+ legenda opcional)
+  → OCR stub (v0.1 não baixa a mídia nem extrai texto)
+  → classifica a legenda por palavras-chave (KeywordClassifier)
+  → parse de valor "R$ 1.234,56" quando presente
+  → salva em store.addReceipt()
+  → responde: categoria, valor, palavras que decidiram, confiança
+```
+
+Troca futura: implementar `OcrProvider` real e baixar a mídia com o
+`mediaId` via Graph API; o resto do fluxo não muda.
+
+## 6. Modelo de dados
+
+Arquivo único `data/store.json` (gitignorado), 3 coleções:
+
+```jsonc
+{
+  "meis": [
+    {
+      "phone": "5514999998888",
+      "name": "Maria",
+      "cnpj": "12345678000199",        // opcional
+      "municipalityIbge": "3529005",   // Marília
+      "openedAt": "2024-03-01",
+      "updatedAt": "2026-11-14T10:00:00.000Z"
+    }
+  ],
+  "receipts": [
+    {
+      "id": "uuid",
+      "phone": "5514999998888",
+      "mediaId": "wamid.xxx",
+      "extractedText": "supermercado ... R$ 123,45",
+      "category": "alimentacao",
+      "confidence": 0.75,
+      "matchedKeywords": ["supermercado"],
+      "amountBrl": 123.45,
+      "createdAt": "2026-11-14T10:00:00.000Z"
+    }
+  ],
+  "deadlines": [
+    {
+      "id": "uuid",
+      "phone": "5514999998888",
+      "kind": "DAS",
+      "dueDate": "2026-11-20",
+      "description": "DAS referente a outubro/2026"
+    }
+  ]
+}
+```
+
+Escrita atômica o suficiente para o piloto (temp file + rename).
+Concorrência multi-instância **não** é suportada — ver migração abaixo.
+
+## 7. Migração para Postgres (quando sair do piloto)
+
+O `JsonStore` já é um repositório: a troca é implementar a mesma
+interface sobre o `pg` (`@types/pg` + `pg`) e trocar a instância
+exportada em `store/db.ts`. Nenhum outro arquivo muda.
+
+Tabelas (rascunho):
+
+```sql
+CREATE TABLE meis (
+  phone TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  cnpj TEXT,
+  municipality_ibge TEXT,
+  opened_at DATE,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE TABLE receipts (
+  id UUID PRIMARY KEY,
+  phone TEXT NOT NULL REFERENCES meis(phone),
+  media_id TEXT,
+  extracted_text TEXT NOT NULL DEFAULT '',
+  category TEXT NOT NULL,
+  confidence REAL NOT NULL,
+  matched_keywords TEXT[] NOT NULL DEFAULT '{}',
+  amount_brl NUMERIC(12,2),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE TABLE deadlines (
+  id UUID PRIMARY KEY,
+  phone TEXT NOT NULL REFERENCES meis(phone),
+  kind TEXT NOT NULL,
+  due_date DATE NOT NULL,
+  description TEXT NOT NULL,
+  reminded_at TIMESTAMPTZ
+);
+```
+
+## 8. Lembretes (jobs)
+
+`src/jobs/reminders.ts` só **gera** lembretes (funções puras, sem I/O
+de rede): `dasReminder()` (vencimento a ≤ 7 dias), `capWarning()`
+(faturamento ≥ 90% do teto), `generateReminders()` (lote). O envio é
+responsabilidade de quem chama (um cron diário às 09:00
+America/Sao_Paulo, ou um endpoint manual no piloto).
+
+## 9. Segurança e privacidade (v0.1)
+
+- Nenhum segredo no repositório: `.env` está no `.gitignore`; o
+  exemplo (`.env.example`) só tem placeholders.
+- O token do WhatsApp vai em variável de ambiente, nunca em código.
+- `data/` é gitignorado — comprovantes e telefones não entram no git.
+- Dependências mínimas (express + dotenv) para superfície de ataque
+  pequena; `npm audit` no CI quando houver.
+- LGPD: no piloto, dados ficam no disco do operador; exclusão e
+  exportação sob pedido precisam existir antes da cobrança (roadmap).
+
+## 10. Limitações conhecidas (honestas)
+
+- O cálculo do vencimento ignora **feriados** (só pula fim de semana).
+- O valor do DAS não é calculado (depende da atividade do MEI).
+- O cadastro de NFS-e tem 5 cidades-semente; cada entrada precisa de
+  revisão humana com a fonte oficial antes de responder ao usuário.
+- O classificador é por palavras-chave e erra em texto ambíguo — a
+  confiança e as palavras-base são mostradas ao usuário justamente
+  para ele corrigir.
+- Sem autenticação no `/webhook` além da verificação da Meta; sem
+  rate limiting em v0.1.
