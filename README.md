@@ -32,8 +32,10 @@ está — o WhatsApp — e fala a língua dele: foto, áudio e texto curto.
   fins de semana e **feriados nacionais e bancários** (adiamento para o
   próximo dia útil, incluindo a Lei 14.759/2023 - Consciência Negra);
   o lembrete traz o valor exato quando a atividade é conhecida.
-- **Cadastro de NFS-e por cidade** (semente: São Paulo, Marília,
-  Campinas, Rio de Janeiro, Belo Horizonte) com o portal oficial.
+- **NFS-e por cidade (20 cidades)** — MEI emite no Emissor Nacional
+  (Receita Federal) em qualquer cidade, desde 09/2023 (CGSN 169/2022);
+  diga "minha cidade é Marília" para gravar a sua e ver o portal da
+  prefeitura (cadastro e consulta).
 - **Alerta de teto** — avisa a partir de 90% do faturamento anual.
 
 ## Como rodar
@@ -92,6 +94,7 @@ tests/
   das.test.ts              Testes das regras do DAS (node:test)
   dasAmount.test.ts        Testes do valor do DAS por atividade
   holidays.test.ts         Testes do calendário de feriados
+  nfse.test.ts             Testes do cadastro de NFS-e (inclui tabela IBGE)
   ocr.test.ts              Testes do OCR (stub + Gemini)
   webhook.test.ts          Testes das respostas do DAS no WhatsApp
   reminders.test.ts        Testes do lembrete de DAS com valor

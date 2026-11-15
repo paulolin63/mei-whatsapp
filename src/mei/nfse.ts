@@ -1,52 +1,57 @@
 /**
  * NFS-e (Nota Fiscal de Serviços eletrônica) — per-municipality registry.
  *
- * Brazil has no single NFS-e system: each city runs its own portal and its
- * own rules. However, since 2022-2023, the Receita Federal has been rolling
- * out the **Portal Nacional de NFS-e do MEI** (nfse.gov.br), which centralises
- * issuance for MEIs in participating cities. As of 2024, most cities are
- * migrating, but many large cities (São Paulo, Rio, Campinas) still use their
- * own systems as of this writing.
+ * The rule that decides the answer for MEI (Resolução CGSN 169/2022):
+ * MEI issues NFS-e in the Padrão Nacional, via the Emissor Nacional
+ * (nfse.gov.br), since September 2023 — regardless of whether the
+ * municipality has joined the national system. (ME/EPP do Simples
+ * Nacional joined the same obligation on 01/11/2026, Resolução CGSN
+ * 191/2026; LC 214/2025 art. 62 requires every municipality to adopt
+ * the national standard or share its notes with the ADN from 2026.)
  *
- * Sources used for each entry are referenced in the `source` field.
- * Entries must be reviewed at least every 90 days (see `lastReviewedAt`);
- * the assistant will warn users when a city's data is stale.
+ * So this registry does NOT gate MEI issuance by city: every entry
+ * points at the Emissor Nacional first. The municipal portal is kept
+ * for cadastro do prestador, consulta and retroactive issuance, and
+ * for taxpayers outside the Simples Nacional.
  *
- * The moat of this product is exactly this registry, kept up to date
- * city by city. The assistant always points users at the official portal
- * for the final word — it never claims to substitute a human review.
+ * What this file does NOT claim: whether a municipality has signed
+ * the convênio with the national system (that only matters for
+ * non-Simples taxpayers). An earlier version tracked it per city with
+ * unverified values; it was removed on 2026-11-15.
+ *
+ * IBGE codes were verified one by one against the IBGE localidades
+ * API on 2026-11-15 (6 wrong codes fixed — see tests/nfse.test.ts).
+ * Municipal portal URLs are NOT re-verified here: confirm on the
+ * portal before issuing. Entries must be reviewed at least every 90
+ * days (see `lastReviewedAt`); the assistant warns users when data
+ * is stale.
  */
 
-/** Canonical system identifier for the portal backing NFS-e in a city. */
+/** Canonical system identifier for the municipal portal behind NFS-e in a city. */
 export type NfseSystem =
-  | 'portal-nacional'   // nfse.gov.br — Receita Federal unified platform
   | 'nota-do-milhao'    // São Paulo's proprietary system
   | 'nota-carioca'      // Rio de Janeiro's proprietary system
-  | 'iss-digital'       // Multiple cities that use this brand name
+  | 'iss-digital'       // Campinas (ISS Digital / DSF)
   | 'bhiss-digital'     // Belo Horizonte
-  | 'portal-proprio'    // Generic proprietary portal
+  | 'portal-proprio'    // Generic proprietary municipal portal (brand not tracked)
   | 'desconhecido';     // Unknown / unverified
 
 export interface MunicipalityNfse {
-  /** IBGE municipality code, e.g. \"3550308\". */
+  /** IBGE municipality code, e.g. "3550308". Verified against the IBGE API. */
   ibge: string;
   city: string;
-  /** State abbreviation, e.g. \"SP\". */
+  /** State abbreviation, e.g. "SP". */
   state: string;
   /** Search variants / alternate spellings (lowercase, unaccented) for fuzzy lookup. */
   aliases?: string[];
-  /** Official NFS-e portal URL for the city. */
-  portalUrl: string;
-  /** Portal Nacional MEI direct URL (when applicable). */
-  portalNacionalUrl?: string;
-  /** Which system the city uses. */
-  system: NfseSystem;
   /**
-   * Whether the Receita Federal Portal Nacional de NFS-e (nfse.gov.br)
-   * is known to cover this city — MEI can issue there instead of the city portal.
-   * Set to true only when officially confirmed.
+   * Municipal NFS-e portal URL. Today it serves for cadastro do
+   * prestador, consulta and retroactive issuance — MEI issues in the
+   * Emissor Nacional, not here.
    */
-  coveredByNationalPortal: boolean;
+  portalUrl: string;
+  /** Which municipal system the city uses. */
+  system: NfseSystem;
   /** Plain-language notes: what is special about issuing here. */
   notes: string[];
   /**
@@ -66,9 +71,13 @@ export const STALE_DAYS = 90;
 
 /**
  * National Portal for MEI NFS-e issuance — Receita Federal.
- * MEIs in participating cities can issue here instead of their city portal.
+ * MEI issues here in every municipality (CGSN 169/2022, since 09/2023).
  */
 export const PORTAL_NACIONAL_URL = 'https://www.nfse.gov.br/EmissorNacional/Login';
+
+/** Reviewed on 2026-11-15 (IBGE codes + national rule). */
+const REVIEWED = '2026-11-15';
+const NATIONAL_RULE = 'Regra do MEI: Resolução CGSN 169/2022 (Emissor Nacional desde 09/2023)';
 
 const REGISTRY: MunicipalityNfse[] = [
   // ── SP Capital ──────────────────────────────────────────────────────────────
@@ -77,17 +86,17 @@ const REGISTRY: MunicipalityNfse[] = [
     city: 'São Paulo',
     state: 'SP',
     aliases: ['sao paulo', 'sp capital'],
-    portalUrl: 'https://nfe.prefeitura.sp.gov.br/',
+    portalUrl: 'https://nfe.prefeitura.sp.gov.br/login.aspx',
     system: 'nota-do-milhao',
-    coveredByNationalPortal: false,
     notes: [
       'Sistema próprio: Nota do Milhão (Prefeitura de SP).',
-      'MEI emite NFS-e pelo portal municipal — o Portal Nacional ainda não substitui o sistema paulistano.',
+      'MEI com tomador CNPJ emite obrigatoriamente no Emissor Nacional (IN SF/SUREM 13/2026); para tomador pessoa física, a emissão nacional é facultativa.',
+      'Sistema municipal fica só para consulta e emissão retroativa.',
       'Exige senha web cadastrada no portal; opcionalmente certificado digital.',
       'ISS: 2% a 5% conforme a atividade (Lei 13.701/2003 e atualizações).',
     ],
-    source: 'https://nfe.prefeitura.sp.gov.br/ — verificado em 2026-11-14',
-    lastReviewedAt: '2026-11-14',
+    source: `https://nfe.prefeitura.sp.gov.br/login.aspx — portal municipal. ${NATIONAL_RULE}`,
+    lastReviewedAt: REVIEWED,
   },
   // ── Interior SP ─────────────────────────────────────────────────────────────
   {
@@ -96,16 +105,10 @@ const REGISTRY: MunicipalityNfse[] = [
     state: 'SP',
     aliases: ['marilia'],
     portalUrl: 'https://www.marilia.sp.gov.br/nfse',
-    system: 'portal-nacional',
-    coveredByNationalPortal: true,
-    portalNacionalUrl: PORTAL_NACIONAL_URL,
-    notes: [
-      'Marília aderiu ao Portal Nacional de NFS-e do MEI (nfse.gov.br).',
-      'MEI emite diretamente no Emissor Nacional: www.nfse.gov.br/EmissorNacional.',
-      'ISS: 2% conforme tabela municipal vigente.',
-    ],
-    source: 'https://www.nfse.gov.br — Prefeitura de Marília confirmado 2026-11-14',
-    lastReviewedAt: '2026-11-14',
+    system: 'portal-proprio',
+    notes: ['ISS: 2% conforme tabela municipal vigente.'],
+    source: `https://www.marilia.sp.gov.br/nfse — portal municipal. ${NATIONAL_RULE}`,
+    lastReviewedAt: REVIEWED,
   },
   {
     ibge: '3509502',
@@ -114,77 +117,57 @@ const REGISTRY: MunicipalityNfse[] = [
     aliases: [],
     portalUrl: 'https://issdigital.campinas.sp.gov.br/',
     system: 'iss-digital',
-    coveredByNationalPortal: false,
     notes: [
-      'Sistema ISS Digital da Prefeitura de Campinas.',
+      'Sistema ISS Digital da Prefeitura de Campinas (modelo 3: sistema próprio integrado ao ADN).',
       'MEI deve estar cadastrado como prestador antes da primeira emissão.',
-      'O Portal Nacional ainda não foi adotado por Campinas.',
+      'Simples e MEI usam o Emissor Nacional desde 01/11/2026.',
     ],
-    source: 'https://issdigital.campinas.sp.gov.br/ — verificado 2026-11-14',
-    lastReviewedAt: '2026-11-14',
+    source: `https://issdigital.campinas.sp.gov.br/ — portal municipal. ${NATIONAL_RULE}`,
+    lastReviewedAt: REVIEWED,
   },
   {
-    ibge: '3534401',
+    ibge: '3543402',
     city: 'Ribeirão Preto',
     state: 'SP',
     aliases: ['ribeirao preto'],
     portalUrl: 'https://nfse.ribeiraopreto.sp.gov.br/',
-    system: 'portal-nacional',
-    coveredByNationalPortal: true,
-    portalNacionalUrl: PORTAL_NACIONAL_URL,
-    notes: [
-      'Ribeirão Preto aderiu ao Portal Nacional de NFS-e (nfse.gov.br).',
-      'MEI emite no Emissor Nacional; o portal municipal é referência complementar.',
-    ],
-    source: 'https://www.nfse.gov.br — verificado 2026-11-14',
-    lastReviewedAt: '2026-11-14',
+    system: 'portal-proprio',
+    notes: [],
+    source: `https://nfse.ribeiraopreto.sp.gov.br/ — portal municipal. ${NATIONAL_RULE}`,
+    lastReviewedAt: REVIEWED,
   },
   {
-    ibge: '3518800',
+    ibge: '3549805',
     city: 'São José do Rio Preto',
     state: 'SP',
     aliases: ['rio preto', 'sao jose do rio preto'],
     portalUrl: 'https://www.riopreto.sp.gov.br/nfse',
-    system: 'portal-nacional',
-    coveredByNationalPortal: true,
-    portalNacionalUrl: PORTAL_NACIONAL_URL,
-    notes: [
-      'Cidade aderiu ao Portal Nacional de NFS-e do MEI (nfse.gov.br).',
-      'MEI emite diretamente no Emissor Nacional.',
-    ],
-    source: 'https://www.nfse.gov.br — verificado 2026-11-14',
-    lastReviewedAt: '2026-11-14',
+    system: 'portal-proprio',
+    notes: [],
+    source: `https://www.riopreto.sp.gov.br/nfse — portal municipal. ${NATIONAL_RULE}`,
+    lastReviewedAt: REVIEWED,
   },
   {
-    ibge: '3548500',
+    ibge: '3552205',
     city: 'Sorocaba',
     state: 'SP',
     aliases: [],
     portalUrl: 'https://nfse.sorocaba.sp.gov.br/',
-    system: 'portal-nacional',
-    coveredByNationalPortal: true,
-    portalNacionalUrl: PORTAL_NACIONAL_URL,
-    notes: [
-      'Sorocaba aderiu ao Portal Nacional de NFS-e do MEI (nfse.gov.br).',
-      'MEI emite no Emissor Nacional; portal municipal está sendo encerrado.',
-    ],
-    source: 'https://www.nfse.gov.br — verificado 2026-11-14',
-    lastReviewedAt: '2026-11-14',
+    system: 'portal-proprio',
+    notes: [],
+    source: `https://nfse.sorocaba.sp.gov.br/ — portal municipal. ${NATIONAL_RULE}`,
+    lastReviewedAt: REVIEWED,
   },
   {
-    ibge: '3503208',
+    ibge: '3506003',
     city: 'Bauru',
     state: 'SP',
     aliases: [],
     portalUrl: 'https://www.bauru.sp.gov.br/nfse',
-    system: 'portal-nacional',
-    coveredByNationalPortal: true,
-    portalNacionalUrl: PORTAL_NACIONAL_URL,
-    notes: [
-      'Bauru aderiu ao Portal Nacional de NFS-e do MEI (nfse.gov.br).',
-    ],
-    source: 'https://www.nfse.gov.br — verificado 2026-11-14',
-    lastReviewedAt: '2026-11-14',
+    system: 'portal-proprio',
+    notes: [],
+    source: `https://www.bauru.sp.gov.br/nfse — portal municipal. ${NATIONAL_RULE}`,
+    lastReviewedAt: REVIEWED,
   },
   // ── RJ Capital ──────────────────────────────────────────────────────────────
   {
@@ -194,29 +177,23 @@ const REGISTRY: MunicipalityNfse[] = [
     aliases: ['rio', 'rio de janeiro'],
     portalUrl: 'https://notacarioca.rio.gov.br/',
     system: 'nota-carioca',
-    coveredByNationalPortal: false,
     notes: [
       'Sistema próprio: Nota Carioca (Prefeitura do Rio).',
-      'MEI emite pelo portal ou pelo app Nota Carioca.',
-      'O Portal Nacional ainda não substitui o sistema carioca.',
+      'Nota Carioca segue disponível para consulta e pelo app.',
     ],
-    source: 'https://notacarioca.rio.gov.br/ — verificado 2026-11-14',
-    lastReviewedAt: '2026-11-14',
+    source: `https://notacarioca.rio.gov.br/ — portal municipal. ${NATIONAL_RULE}`,
+    lastReviewedAt: REVIEWED,
   },
   {
-    ibge: '3303500',
+    ibge: '3303302',
     city: 'Niterói',
     state: 'RJ',
     aliases: ['niteroi'],
     portalUrl: 'https://nfse.niteroi.rj.gov.br/',
-    system: 'portal-nacional',
-    coveredByNationalPortal: true,
-    portalNacionalUrl: PORTAL_NACIONAL_URL,
-    notes: [
-      'Niterói aderiu ao Portal Nacional de NFS-e do MEI (nfse.gov.br).',
-    ],
-    source: 'https://www.nfse.gov.br — verificado 2026-11-14',
-    lastReviewedAt: '2026-11-14',
+    system: 'portal-proprio',
+    notes: [],
+    source: `https://nfse.niteroi.rj.gov.br/ — portal municipal. ${NATIONAL_RULE}`,
+    lastReviewedAt: REVIEWED,
   },
   // ── MG Capital ──────────────────────────────────────────────────────────────
   {
@@ -226,14 +203,12 @@ const REGISTRY: MunicipalityNfse[] = [
     aliases: ['bh', 'belo horizonte'],
     portalUrl: 'https://bhissdigital.pbh.gov.br/',
     system: 'bhiss-digital',
-    coveredByNationalPortal: false,
     notes: [
       'Sistema BHISS Digital (Prefeitura de BH).',
       'Cadastro prévio do prestador é obrigatório.',
-      'O Portal Nacional ainda não foi adotado por BH.',
     ],
-    source: 'https://bhissdigital.pbh.gov.br/ — verificado 2026-11-14',
-    lastReviewedAt: '2026-11-14',
+    source: `https://bhissdigital.pbh.gov.br/ — portal municipal. ${NATIONAL_RULE}`,
+    lastReviewedAt: REVIEWED,
   },
   {
     ibge: '3170206',
@@ -241,14 +216,10 @@ const REGISTRY: MunicipalityNfse[] = [
     state: 'MG',
     aliases: ['uberlandia'],
     portalUrl: 'https://nfse.uberlandia.mg.gov.br/',
-    system: 'portal-nacional',
-    coveredByNationalPortal: true,
-    portalNacionalUrl: PORTAL_NACIONAL_URL,
-    notes: [
-      'Uberlândia aderiu ao Portal Nacional de NFS-e do MEI (nfse.gov.br).',
-    ],
-    source: 'https://www.nfse.gov.br — verificado 2026-11-14',
-    lastReviewedAt: '2026-11-14',
+    system: 'portal-proprio',
+    notes: [],
+    source: `https://nfse.uberlandia.mg.gov.br/ — portal municipal. ${NATIONAL_RULE}`,
+    lastReviewedAt: REVIEWED,
   },
   // ── RS ──────────────────────────────────────────────────────────────────────
   {
@@ -257,15 +228,10 @@ const REGISTRY: MunicipalityNfse[] = [
     state: 'RS',
     aliases: ['poa', 'porto alegre'],
     portalUrl: 'https://www.portoalegre.rs.gov.br/nfse',
-    system: 'portal-nacional',
-    coveredByNationalPortal: true,
-    portalNacionalUrl: PORTAL_NACIONAL_URL,
-    notes: [
-      'Porto Alegre aderiu ao Portal Nacional de NFS-e do MEI (nfse.gov.br).',
-      'MEI emite no Emissor Nacional.',
-    ],
-    source: 'https://www.nfse.gov.br — verificado 2026-11-14',
-    lastReviewedAt: '2026-11-14',
+    system: 'portal-proprio',
+    notes: [],
+    source: `https://www.portoalegre.rs.gov.br/nfse — portal municipal. ${NATIONAL_RULE}`,
+    lastReviewedAt: REVIEWED,
   },
   // ── PR ──────────────────────────────────────────────────────────────────────
   {
@@ -274,31 +240,22 @@ const REGISTRY: MunicipalityNfse[] = [
     state: 'PR',
     aliases: [],
     portalUrl: 'https://nfse.curitiba.pr.gov.br/',
-    system: 'portal-nacional',
-    coveredByNationalPortal: true,
-    portalNacionalUrl: PORTAL_NACIONAL_URL,
-    notes: [
-      'Curitiba aderiu ao Portal Nacional de NFS-e do MEI (nfse.gov.br).',
-      'MEI emite diretamente no Emissor Nacional.',
-    ],
-    source: 'https://www.nfse.gov.br — verificado 2026-11-14',
-    lastReviewedAt: '2026-11-14',
+    system: 'portal-proprio',
+    notes: [],
+    source: `https://nfse.curitiba.pr.gov.br/ — portal municipal. ${NATIONAL_RULE}`,
+    lastReviewedAt: REVIEWED,
   },
   // ── SC ──────────────────────────────────────────────────────────────────────
   {
-    ibge: '4209102',
+    ibge: '4205407',
     city: 'Florianópolis',
     state: 'SC',
     aliases: ['florianopolis', 'floripa'],
     portalUrl: 'https://nfse.pmf.sc.gov.br/',
-    system: 'portal-nacional',
-    coveredByNationalPortal: true,
-    portalNacionalUrl: PORTAL_NACIONAL_URL,
-    notes: [
-      'Florianópolis aderiu ao Portal Nacional de NFS-e do MEI (nfse.gov.br).',
-    ],
-    source: 'https://www.nfse.gov.br — verificado 2026-11-14',
-    lastReviewedAt: '2026-11-14',
+    system: 'portal-proprio',
+    notes: [],
+    source: `https://nfse.pmf.sc.gov.br/ — portal municipal. ${NATIONAL_RULE}`,
+    lastReviewedAt: REVIEWED,
   },
   // ── PE ──────────────────────────────────────────────────────────────────────
   {
@@ -307,14 +264,10 @@ const REGISTRY: MunicipalityNfse[] = [
     state: 'PE',
     aliases: [],
     portalUrl: 'https://nfse.recife.pe.gov.br/',
-    system: 'portal-nacional',
-    coveredByNationalPortal: true,
-    portalNacionalUrl: PORTAL_NACIONAL_URL,
-    notes: [
-      'Recife aderiu ao Portal Nacional de NFS-e do MEI (nfse.gov.br).',
-    ],
-    source: 'https://www.nfse.gov.br — verificado 2026-11-14',
-    lastReviewedAt: '2026-11-14',
+    system: 'portal-proprio',
+    notes: [],
+    source: `https://nfse.recife.pe.gov.br/ — portal municipal. ${NATIONAL_RULE}`,
+    lastReviewedAt: REVIEWED,
   },
   // ── BA ──────────────────────────────────────────────────────────────────────
   {
@@ -323,14 +276,10 @@ const REGISTRY: MunicipalityNfse[] = [
     state: 'BA',
     aliases: [],
     portalUrl: 'https://nfse.salvador.ba.gov.br/',
-    system: 'portal-nacional',
-    coveredByNationalPortal: true,
-    portalNacionalUrl: PORTAL_NACIONAL_URL,
-    notes: [
-      'Salvador aderiu ao Portal Nacional de NFS-e do MEI (nfse.gov.br).',
-    ],
-    source: 'https://www.nfse.gov.br — verificado 2026-11-14',
-    lastReviewedAt: '2026-11-14',
+    system: 'portal-proprio',
+    notes: [],
+    source: `https://nfse.salvador.ba.gov.br/ — portal municipal. ${NATIONAL_RULE}`,
+    lastReviewedAt: REVIEWED,
   },
   // ── CE ──────────────────────────────────────────────────────────────────────
   {
@@ -339,14 +288,10 @@ const REGISTRY: MunicipalityNfse[] = [
     state: 'CE',
     aliases: [],
     portalUrl: 'https://nfse.fortaleza.ce.gov.br/',
-    system: 'portal-nacional',
-    coveredByNationalPortal: true,
-    portalNacionalUrl: PORTAL_NACIONAL_URL,
-    notes: [
-      'Fortaleza aderiu ao Portal Nacional de NFS-e do MEI (nfse.gov.br).',
-    ],
-    source: 'https://www.nfse.gov.br — verificado 2026-11-14',
-    lastReviewedAt: '2026-11-14',
+    system: 'portal-proprio',
+    notes: [],
+    source: `https://nfse.fortaleza.ce.gov.br/ — portal municipal. ${NATIONAL_RULE}`,
+    lastReviewedAt: REVIEWED,
   },
   // ── AM ──────────────────────────────────────────────────────────────────────
   {
@@ -355,14 +300,10 @@ const REGISTRY: MunicipalityNfse[] = [
     state: 'AM',
     aliases: [],
     portalUrl: 'https://nfse.manaus.am.gov.br/',
-    system: 'portal-nacional',
-    coveredByNationalPortal: true,
-    portalNacionalUrl: PORTAL_NACIONAL_URL,
-    notes: [
-      'Manaus aderiu ao Portal Nacional de NFS-e do MEI (nfse.gov.br).',
-    ],
-    source: 'https://www.nfse.gov.br — verificado 2026-11-14',
-    lastReviewedAt: '2026-11-14',
+    system: 'portal-proprio',
+    notes: [],
+    source: `https://nfse.manaus.am.gov.br/ — portal municipal. ${NATIONAL_RULE}`,
+    lastReviewedAt: REVIEWED,
   },
   // ── GO ──────────────────────────────────────────────────────────────────────
   {
@@ -371,14 +312,10 @@ const REGISTRY: MunicipalityNfse[] = [
     state: 'GO',
     aliases: ['goiania'],
     portalUrl: 'https://nfse.goiania.go.gov.br/',
-    system: 'portal-nacional',
-    coveredByNationalPortal: true,
-    portalNacionalUrl: PORTAL_NACIONAL_URL,
-    notes: [
-      'Goiânia aderiu ao Portal Nacional de NFS-e do MEI (nfse.gov.br).',
-    ],
-    source: 'https://www.nfse.gov.br — verificado 2026-11-14',
-    lastReviewedAt: '2026-11-14',
+    system: 'portal-proprio',
+    notes: [],
+    source: `https://nfse.goiania.go.gov.br/ — portal municipal. ${NATIONAL_RULE}`,
+    lastReviewedAt: REVIEWED,
   },
   // ── DF ──────────────────────────────────────────────────────────────────────
   {
@@ -387,15 +324,10 @@ const REGISTRY: MunicipalityNfse[] = [
     state: 'DF',
     aliases: ['brasilia', 'df'],
     portalUrl: 'https://nfse.df.gov.br/',
-    system: 'portal-nacional',
-    coveredByNationalPortal: true,
-    portalNacionalUrl: PORTAL_NACIONAL_URL,
-    notes: [
-      'Brasília (DF) aderiu ao Portal Nacional de NFS-e do MEI (nfse.gov.br).',
-      'O DF trata NFS-e via SEFAZ-DF integrado ao Portal Nacional.',
-    ],
-    source: 'https://www.nfse.gov.br — verificado 2026-11-14',
-    lastReviewedAt: '2026-11-14',
+    system: 'portal-proprio',
+    notes: [],
+    source: `https://nfse.df.gov.br/ — portal municipal. ${NATIONAL_RULE}`,
+    lastReviewedAt: REVIEWED,
   },
 ];
 
@@ -438,27 +370,25 @@ export function isStale(m: MunicipalityNfse, now: Date = new Date()): boolean {
 
 /**
  * Short human-readable WhatsApp reply for a city.
- * Always includes the official portal URL and a stale warning when applicable.
+ * MEI always issues in the Emissor Nacional first; the municipal
+ * portal is shown for cadastro and consulta. Appends a stale warning
+ * when applicable.
  */
 export function summarizeMunicipality(m: MunicipalityNfse, now: Date = new Date()): string {
-  const lines: string[] = [];
-
-  if (m.coveredByNationalPortal) {
-    lines.push(
-      `✅ *${m.city}/${m.state}* usa o *Portal Nacional de NFS-e do MEI* (Receita Federal):`,
-      `• Emissor Nacional: ${m.portalNacionalUrl ?? PORTAL_NACIONAL_URL}`,
-      `• Você emite direto no site da Receita Federal — sem precisar acessar o portal da prefeitura.`,
-    );
-  } else {
-    lines.push(
-      `🏙️ *${m.city}/${m.state}* usa sistema próprio da prefeitura:`,
-      `• Portal oficial: ${m.portalUrl}`,
-    );
-  }
+  const lines: string[] = [
+    `✅ *${m.city}/${m.state}* — MEI emite NFS-e no *Emissor Nacional* (Receita Federal):`,
+    `• Emissor Nacional: ${PORTAL_NACIONAL_URL}`,
+    `• Acesso com conta gov.br, usuário/senha ou certificado digital.`,
+    `• Portal da prefeitura (cadastro e consulta): ${m.portalUrl}`,
+  ];
 
   for (const note of m.notes) {
     lines.push(`• ${note}`);
   }
+
+  lines.push(
+    `Para emitir: entre no Emissor Nacional, preencha os dados do tomador e do serviço e confira antes de confirmar.`,
+  );
 
   if (isStale(m, now)) {
     lines.push(

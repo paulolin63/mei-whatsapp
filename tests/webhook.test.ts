@@ -7,7 +7,7 @@
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildDasReply, parseActivityFromText } from '../src/whatsapp/webhook';
+import { buildDasReply, parseActivityFromText, parseSetCityCommand } from '../src/whatsapp/webhook';
 import type { MeiProfile } from '../src/types';
 
 function mei(overrides: Partial<MeiProfile> = {}): MeiProfile {
@@ -36,6 +36,20 @@ test('parseActivityFromText: no activity named, returns undefined', () => {
   assert.equal(parseActivityFromText('oi, tudo bem?'), undefined);
   assert.equal(parseActivityFromText('sou MEI'), undefined);
   assert.equal(parseActivityFromText('quando vence o DAS?'), undefined);
+});
+
+test('parseSetCityCommand: "minha cidade é …" / "moro em …" / "sou de …"', () => {
+  assert.equal(parseSetCityCommand('minha cidade é Marília')?.city, 'Marília');
+  assert.equal(parseSetCityCommand('moro em BH')?.city, 'Belo Horizonte');
+  assert.equal(parseSetCityCommand('sou de Curitiba')?.city, 'Curitiba');
+  assert.equal(parseSetCityCommand('cidade: Sorocaba')?.city, 'Sorocaba');
+  assert.equal(parseSetCityCommand('minha cidade é Floripa')?.city, 'Florianópolis');
+});
+
+test('parseSetCityCommand: no city command, or city not in the registry', () => {
+  assert.equal(parseSetCityCommand('quando vence o DAS?'), undefined);
+  assert.equal(parseSetCityCommand('nota fiscal Recife'), undefined);
+  assert.equal(parseSetCityCommand('minha cidade é Paris'), undefined);
 });
 
 test('buildDasReply: activity known → exact amount + due date', () => {

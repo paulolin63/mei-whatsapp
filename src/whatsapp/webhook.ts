@@ -20,6 +20,7 @@ import {
   tryDasAmountTable,
 } from '../mei/dasAmount';
 import { getMunicipality, summarizeMunicipality, extractCityFromText, listMunicipalities, PORTAL_NACIONAL_URL } from '../mei/nfse';
+import type { MunicipalityNfse } from '../mei/nfse';
 import { store } from '../store/db';
 import { downloadMedia } from './client';
 import type {
@@ -141,6 +142,25 @@ export function parseActivityFromText(text: string): MeiActivity | undefined {
 }
 
 /**
+ * Parse a "set my city" command, e.g. "minha cidade é Marília",
+ * "moro em BH", "sou de Curitiba". Returns the city when the message
+ * names one from the registry, undefined otherwise. Pure — tested in
+ * tests/webhook.test.ts.
+ */
+export function parseSetCityCommand(text: string): MunicipalityNfse | undefined {
+  const q = text.toLowerCase();
+  if (
+    q.includes('minha cidade') ||
+    q.includes('moro em') ||
+    q.includes('sou de ') ||
+    q.includes('cidade:')
+  ) {
+    return extractCityFromText(text);
+  }
+  return undefined;
+}
+
+/**
  * Pure DAS reply for one MEI: due date + exact amount when the
  * activity is known, the 3-row table when it is not. No store
  * access — unit-testable (see tests/webhook.test.ts).
@@ -222,10 +242,37 @@ export function answerQuestion(phone: string, text: string): string {
     return buildDasReply(mei);
   }
 
+  // Setting the city: "minha cidade é Marília", "moro em BH",
+  // "sou de Curitiba". Checked before the NFS-e branch so the city
+  // is saved, not just answered.
+  if (
+    q.includes('minha cidade') ||
+    q.includes('moro em') ||
+    q.includes('sou de ') ||
+    q.includes('cidade:')
+  ) {
+    const city = parseSetCityCommand(text);
+    if (city) {
+      store.upsertMei({ ...mei, municipalityIbge: city.ibge });
+      return (
+        `Anotado: sua cidade é ${city.city}/${city.state}.\n\n` +
+        summarizeMunicipality(city) +
+        DISCLAIMER
+      );
+    }
+    return (
+      `Não encontrei essa cidade no meu cadastro (tenho ${listMunicipalities().length} cidades). ` +
+      `Mas como MEI você emite NFS-e no Emissor Nacional em qualquer cidade: ${PORTAL_NACIONAL_URL}` +
+      DISCLAIMER
+    );
+  }
+
   if (q.includes('nota') || q.includes('nfs') || q.includes('nota fiscal')) {
     // 1. Try to extract city from the message itself ("NFS-e em Curitiba?", "nota de Salvador")
     const mentioned = extractCityFromText(text);
     if (mentioned) {
+      // Remember the city the user mentioned, so next time it is the default.
+      store.upsertMei({ ...mei, municipalityIbge: mentioned.ibge });
       return summarizeMunicipality(mentioned) + DISCLAIMER;
     }
 
@@ -241,13 +288,15 @@ export function answerQuestion(phone: string, text: string): string {
       );
     }
 
-    // 3. Generic reply with Portal Nacional highlight + invite to say city
+    // 3. Generic reply: MEI always issues in the Emissor Nacional,
+    // whatever the city — invite the user to say their city for the
+    // municipal portal (cadastro/consulta) and local details.
     const totalCities = listMunicipalities().length;
     return (
       `📄 *NFS-e (Nota Fiscal de Serviços)*\n\n` +
-      `A emissão depende da sua cidade. Muitas já usam o *Portal Nacional do MEI* (Receita Federal):\n` +
+      `Como MEI, você emite no *Portal Nacional* (Receita Federal), em qualquer cidade:\n` +
       `• ${PORTAL_NACIONAL_URL}\n\n` +
-      `Me diga a sua cidade que eu te passo o portal certo. ` +
+      `Me diga a sua cidade que eu te passo o portal da prefeitura (cadastro e consulta) e os detalhes locais. ` +
       `Tenho ${totalCities} cidades cadastradas (SP, RJ, BH, Curitiba, Porto Alegre, Florianópolis e mais).` +
       DISCLAIMER
     );
@@ -259,7 +308,7 @@ export function answerQuestion(phone: string, text: string): string {
       'O que eu já faço:\n' +
       '• Foto de comprovante → classifico a despesa\n' +
       '• Pergunte quanto é o DAS e quando vence\n' +
-      '• Pergunte sobre NFS-e e teto do MEI\n' +
+      '• NFS-e e teto do MEI — diga sua cidade que eu lembro dela\n' +
       '• Lembro você do vencimento do DAS\n\n' +
       'Envie uma foto de um comprovante ou pergunte, por exemplo: "quanto é o DAS?"' +
       DISCLAIMER

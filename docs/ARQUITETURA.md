@@ -42,10 +42,10 @@ Express; o store nunca é acessado fora de `store/db.ts`.
 | `src/config.ts` | Variáveis de ambiente com defaults seguros | dotenv |
 | `src/types.ts` | Tipos de domínio (sem imports de framework) | — |
 | `src/whatsapp/client.ts` | Envio de texto via Graph API; no-op com log se não configurado | fetch global, config |
-| `src/whatsapp/webhook.ts` | Parse do payload da Meta; roteamento texto/foto; Q&A por palavras-chave (inclui valor do DAS e gravação da atividade) | classify, ocr, das, dasAmount, nfse, store |
+| `src/whatsapp/webhook.ts` | Parse do payload da Meta; roteamento texto/foto; Q&A por palavras-chave (inclui valor do DAS e gravação da atividade e da cidade) | classify, ocr, das, dasAmount, nfse, store |
 | `src/mei/das.ts` | Regras do DAS: dia 20, dia útil, teto R$ 81 mil, proporcional | — |
 | `src/mei/dasAmount.ts` | Valor do DAS por atividade (tabela oficial anual, mínimo por decreto) | das, types |
-| `src/mei/nfse.ts` | Cadastro de NFS-e por município (dados, não lei) | — |
+| `src/mei/nfse.ts` | Cadastro de NFS-e por município (20 cidades; MEI sempre no Emissor Nacional, portal municipal p/ cadastro e consulta) | — |
 | `src/receipts/classify.ts` | Classificador por palavras-chave + interface `ReceiptClassifier` | types |
 | `src/receipts/ocr.ts` | GeminiOcrProvider (multimodal) + stub quando não há chave | config |
 | `src/store/db.ts` | JSON store em `data/store.json`; interface de repositório | config, types |
@@ -77,6 +77,20 @@ Express; o store nunca é acessado fora de `store/db.ts`.
   → resposta com a data e o valor exato; sem atividade, responde a
     tabela de 3 valores e pede a atividade ("minha atividade é serviços")
   + disclaimer (contador tem a palavra final)
+```
+
+```
+"nota em São Paulo?"
+  → Q&A detecta "nota"/"nfs"
+  → extractCityFromText() encontra São Paulo → grava municipalityIbge no perfil
+  → summarizeMunicipality(): Emissor Nacional primeiro (regra do MEI,
+    CGSN 169/2022) + portal municipal (cadastro/consulta) + como emitir
+  + disclaimer (contador tem a palavra final)
+
+"minha cidade é Marília"
+  → parseSetCityCommand() → grava municipalityIbge → confirma + resumo da cidade
+  (cidade fora do cadastro: responde o Emissor Nacional mesmo assim,
+  pois a emissão do MEI não depende da cidade)
 ```
 
 ## 5. Fluxo de mensagem (foto de comprovante)
@@ -203,8 +217,10 @@ DAS na mensagem; sem atividade, mantém o aviso de conferir no Portal.
 - O valor do DAS segue a tabela oficial anual (salário mínimo por
   decreto); um ano sem linha na tabela faz o código recusar o cálculo
   em vez de chutar — a tabela precisa de revisão todo janeiro.
-- O cadastro de NFS-e tem 5 cidades-semente; cada entrada precisa de
-  revisão humana com a fonte oficial antes de responder ao usuário.
+- O cadastro de NFS-e tem 20 cidades; códigos IBGE validados contra a
+  API do IBGE (2026-11-15) e travados por teste de regressão. URLs dos
+  portais municipais não são re-verificadas a cada resposta — confirme
+  no portal antes de emitir.
 - O classificador é por palavras-chave e erra em texto ambíguo — a
   confiança e as palavras-base são mostradas ao usuário justamente
   para ele corrigir.

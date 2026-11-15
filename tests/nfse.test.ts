@@ -35,7 +35,8 @@ test('getMunicipality: alias lookup (rio → Rio de Janeiro)', () => {
 
 test('getMunicipality: alias lookup (floripa → Florianópolis)', () => {
   const m = getMunicipality('floripa');
-  assert.equal(m?.ibge, '4209102');
+  // 4209102 is Joinville, not Florianópolis — fixed 2026-11-15.
+  assert.equal(m?.ibge, '4205407');
 });
 
 test('getMunicipality: IBGE code lookup', () => {
@@ -47,29 +48,54 @@ test('getMunicipality: unknown city returns undefined', () => {
   assert.equal(getMunicipality('Marte'), undefined);
 });
 
-// ── coveredByNationalPortal flag ─────────────────────────────────────────────
+// ── IBGE ground truth ────────────────────────────────────────────────────────
+// Every IBGE code in the registry, checked one by one against the
+// IBGE localidades API (servicodados.ibge.gov.br) on 2026-11-15.
+// This is the regression guard: an earlier version had 6 wrong codes
+// (all plausible-looking) and the tests passed anyway, because they
+// only asserted internal consistency. Never drop this test.
 
-test('registry: São Paulo is NOT covered by Portal Nacional', () => {
-  const m = getMunicipality('São Paulo');
-  assert.equal(m?.coveredByNationalPortal, false);
-  assert.equal(m?.system, 'nota-do-milhao');
+test('registry: every IBGE code maps to the right city (IBGE API, 2026-11-15)', () => {
+  const expected: Record<string, string> = {
+    '3550308': 'São Paulo',
+    '3529005': 'Marília',
+    '3509502': 'Campinas',
+    '3543402': 'Ribeirão Preto',
+    '3549805': 'São José do Rio Preto',
+    '3552205': 'Sorocaba',
+    '3506003': 'Bauru',
+    '3304557': 'Rio de Janeiro',
+    '3303302': 'Niterói',
+    '3106200': 'Belo Horizonte',
+    '3170206': 'Uberlândia',
+    '4314902': 'Porto Alegre',
+    '4106902': 'Curitiba',
+    '4205407': 'Florianópolis',
+    '2611606': 'Recife',
+    '2927408': 'Salvador',
+    '2304400': 'Fortaleza',
+    '1302603': 'Manaus',
+    '5208707': 'Goiânia',
+    '5300108': 'Brasília',
+  };
+  const codes = Object.keys(expected);
+  assert.equal(listMunicipalities().length, codes.length);
+  for (const code of codes) {
+    const m = getMunicipality(code);
+    assert.equal(
+      m?.city,
+      expected[code],
+      `IBGE code ${code} should be ${expected[code]}, got ${m?.city}`,
+    );
+  }
 });
 
-test('registry: Marília IS covered by Portal Nacional', () => {
-  const m = getMunicipality('Marília');
-  assert.equal(m?.coveredByNationalPortal, true);
-  assert.equal(m?.portalNacionalUrl, PORTAL_NACIONAL_URL);
-});
-
-test('registry: Curitiba IS covered by Portal Nacional', () => {
-  const m = getMunicipality('Curitiba');
-  assert.equal(m?.coveredByNationalPortal, true);
-});
-
-test('registry: Rio de Janeiro is NOT covered by Portal Nacional', () => {
-  const m = getMunicipality('Rio de Janeiro');
-  assert.equal(m?.coveredByNationalPortal, false);
-  assert.equal(m?.system, 'nota-carioca');
+test('registry: no entry keeps the old wrong IBGE codes', () => {
+  // 3543401 does not exist; 3518800 is Guarulhos, 3548500 Santos,
+  // 3503208 Araraquara, 3303500 Nova Iguaçu, 4209102 Joinville.
+  for (const wrong of ['3543401', '3518800', '3548500', '3503208', '3303500', '4209102']) {
+    assert.equal(getMunicipality(wrong), undefined, `Wrong code ${wrong} still resolves`);
+  }
 });
 
 // ── listMunicipalities ───────────────────────────────────────────────────────
@@ -91,7 +117,7 @@ test('listMunicipalities: covers major capitals', () => {
 
 test('isStale: fresh entry is not stale', () => {
   const m = getMunicipality('Curitiba')!;
-  assert.equal(isStale(m, new Date('2026-11-14')), false);
+  assert.equal(isStale(m, new Date('2026-11-15')), false);
 });
 
 test('isStale: entry older than STALE_DAYS is stale', () => {
@@ -103,19 +129,40 @@ test('isStale: entry older than STALE_DAYS is stale', () => {
 });
 
 // ── summarizeMunicipality ────────────────────────────────────────────────────
+// The rule for MEI (CGSN 169/2022): every MEI issues in the Emissor
+// Nacional, whatever the city. The summary must say so for all cities.
 
-test('summarizeMunicipality: Portal Nacional cities highlight the unified URL', () => {
-  const m = getMunicipality('Curitiba')!;
-  const summary = summarizeMunicipality(m, new Date('2026-11-14'));
-  assert.ok(summary.includes('Portal Nacional'), `Expected Portal Nacional mention, got: ${summary}`);
-  assert.ok(summary.includes(PORTAL_NACIONAL_URL));
+test('summarizeMunicipality: every city directs MEI to the Emissor Nacional', () => {
+  for (const m of listMunicipalities()) {
+    const summary = summarizeMunicipality(m, new Date('2026-11-15'));
+    assert.ok(
+      summary.includes('Emissor Nacional'),
+      `${m.city}: expected Emissor Nacional mention`,
+    );
+    assert.ok(
+      summary.includes(PORTAL_NACIONAL_URL),
+      `${m.city}: expected the national portal URL`,
+    );
+    assert.ok(
+      summary.includes(m.portalUrl),
+      `${m.city}: expected the municipal portal URL`,
+    );
+  }
 });
 
-test('summarizeMunicipality: São Paulo shows its own portal URL', () => {
+test('summarizeMunicipality: São Paulo says the municipal system is consultation-only', () => {
   const m = getMunicipality('São Paulo')!;
-  const summary = summarizeMunicipality(m, new Date('2026-11-14'));
-  assert.ok(summary.includes('nfe.prefeitura.sp.gov.br'));
-  assert.ok(summary.includes('sistema próprio'));
+  const summary = summarizeMunicipality(m, new Date('2026-11-15'));
+  assert.ok(summary.includes('nfe.prefeitura.sp.gov.br/login.aspx'));
+  assert.ok(summary.includes('consulta'));
+  assert.ok(summary.includes('Emissor Nacional'));
+});
+
+test('summarizeMunicipality: Marília shows its municipal portal', () => {
+  const m = getMunicipality('Marília')!;
+  const summary = summarizeMunicipality(m, new Date('2026-11-15'));
+  assert.ok(summary.includes('marilia.sp.gov.br/nfse'));
+  assert.ok(summary.includes('Para emitir:'));
 });
 
 test('summarizeMunicipality: stale entry appends warning', () => {
