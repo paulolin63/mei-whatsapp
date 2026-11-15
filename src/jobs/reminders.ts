@@ -119,7 +119,10 @@ export function capWarning(
 }
 
 import { store, JsonStore } from '../store/db';
-import { sendDasReminderSmart } from '../whatsapp/client';
+import {
+  sendDasReminderSmart,
+  isWithin24hWindow,
+} from '../whatsapp/client';
 
 export interface ReminderRunResult {
   totalMeis: number;
@@ -188,14 +191,18 @@ export async function runDasRemindersJob(options: {
     const dueDateStr = `${day}/${month}/${year}`;
 
     if (isDryRun) {
+      // Preview only: report what would happen — the channel is the
+      // one the window would select, and nothing is sent or marked.
+      const wouldBeChannel = isWithin24hWindow(mei.updatedAt, now)
+        ? 'session'
+        : 'template';
       details.push({
         phone: mei.phone,
         dueDate: reminder.dueDate,
-        channel: 'template',
-        sent: true,
+        channel: wouldBeChannel,
+        sent: false,
         reason: 'dry-run',
       });
-      sent++;
       continue;
     }
 

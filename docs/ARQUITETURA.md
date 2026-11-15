@@ -203,19 +203,32 @@ CREATE TABLE deadlines (
 
 ## 8. Lembretes (jobs)
 
-`src/jobs/reminders.ts` só **gera** lembretes (funções puras, sem I/O
-de rede): `dasReminder()` (vencimento a ≤ 7 dias), `capWarning()`
-(faturamento ≥ 90% do teto), `generateReminders()` (lote). O envio é
-responsabilidade de quem chama (um cron diário às 09:00
-America/Sao_Paulo, ou um endpoint manual no piloto). Quando a
-atividade do MEI é conhecida, `dasReminder()` inclui o valor exato do
-DAS na mensagem; sem atividade, mantém o aviso de conferir no Portal.
+`src/jobs/reminders.ts` **gera** lembretes (funções puras, sem I/O de
+rede): `dasReminder()` (vencimento a ≤ 7 dias), `capWarning()`
+(faturamento ≥ 90% do teto). `runDasRemindersJob()` varre todos os
+MEIs, pula quem já foi lembrado desta data (`hasBeenReminded()`), e
+dispara via `sendDasReminderSmart()`: dentro de 24h da última
+interação, mensagem de texto livre (grátis); fora da janela, o
+template aprovado `lembrete_das_vencimento`. Depois de enviar com
+sucesso, `markDeadlineReminded()` registra o envio (dedup).
+
+O disparo é o endpoint `POST /jobs/reminders` (`src/index.ts`),
+protegido por `CRON_SECRET` (`src/jobs/cronAuth.ts`, fail closed:
+sem secret configurado, recusa tudo; comparação timing-safe).
+`GET /jobs/reminders` só devolve o status — nunca dispara.
+`?dryRun=true` pré-visualiza sem enviar nem marcar.
+
+A janela de 24h usa `updatedAt` do perfil como última interação:
+toda mensagem recebida atualiza `updatedAt` (`ensureMei()`).
 
 ## 9. Segurança e privacidade (v0.1)
 
 - Nenhum segredo no repositório: `.env` está no `.gitignore`; o
   exemplo (`.env.example`) só tem placeholders.
 - O token do WhatsApp vai em variável de ambiente, nunca em código.
+- `POST /jobs/reminders` exige `CRON_SECRET` (fail closed: sem secret
+  configurado, recusa tudo) e comparação timing-safe; `GET` no mesmo
+  caminho só devolve o status e nunca dispara.
 - `data/` é gitignorado — comprovantes e telefones não entram no git.
 - Dependências mínimas (express + dotenv) para superfície de ataque
   pequena; `npm audit` no CI quando houver.
@@ -235,6 +248,9 @@ DAS na mensagem; sem atividade, mantém o aviso de conferir no Portal.
 - A exclusão LGPD apaga perfil, comprovantes e prazos de store.json.
   Cópias de segurança do arquivo, se existirem fora do piloto, não
   são apagadas por este comando.
+- O dedup de lembretes é check-then-mark, sem lock: duas execuções
+  sobrepostas do cron podem duplicar um lembrete. No piloto (uma
+  instância, uma vez por dia), o risco é baixo.
 - O classificador é por palavras-chave e erra em texto ambíguo — a
   confiança e as palavras-base são mostradas ao usuário justamente
   para ele corrigir.

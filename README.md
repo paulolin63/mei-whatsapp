@@ -78,10 +78,17 @@ O assistente envia lembretes a até 7 dias do vencimento. O disparo pode ser
 acionado diariamente por um cron job externo (ex.: 09:00 no fuso de Brasília):
 
 ```bash
-curl -X POST "http://localhost:3000/jobs/reminders?secret=SEU_CRON_SECRET"
+curl -X POST "http://localhost:3000/jobs/reminders" \
+  -H "Authorization: Bearer <CRON_SECRET>"
 # ou para simular sem disparar mensagens:
-curl "http://localhost:3000/jobs/reminders?secret=SEU_CRON_SECRET&dryRun=true"
+curl -X POST "http://localhost:3000/jobs/reminders?dryRun=true" \
+  -H "Authorization: Bearer <CRON_SECRET>"
 ```
+
+`GET /jobs/reminders` só devolve o status do job — nunca dispara. `?secret=`
+na URL funciona como alternativa ao header, mas aparece em logs: prefira o
+header `Authorization: Bearer`. Sem `CRON_SECRET` configurado, o endpoint
+recusa todas as chamadas (fail closed).
 
 Dentro da janela de 24h, o envio usa mensagem de texto livre; fora dela,
 usa o template aprovado `lembrete_das_vencimento` (veja `docs/WHATSAPP_TEMPLATE.md`).

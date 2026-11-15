@@ -83,13 +83,26 @@ test('runDasRemindersJob: dry-run and dedup execution', async () => {
     // 2026-10-15: due date is 2026-10-20 (5 days ahead, inside 7-day window)
     const referenceDate = new Date(2026, 9, 15);
 
-    // Eligible MEI
+    // Eligible MEI — interacted ~12–15h before the reference date,
+    // so the preview channel is the free session message.
     store.upsertMei({
       phone: '5511999990001',
       name: 'Ana Silva',
       activity: 'servicos',
-      updatedAt: '2026-10-15T08:00:00.000Z',
+      updatedAt: '2026-10-14T12:00:00.000Z',
     });
+
+    // upsertMei always stamps updatedAt with the real clock, so the
+    // store file is edited directly to place Ana's last interaction
+    // 12–15h before the reference date below.
+    const storeFile = path.join(dir, 'store.json');
+    const stored = JSON.parse(fs.readFileSync(storeFile, 'utf-8')) as {
+      meis: { phone: string; updatedAt: string }[];
+    };
+    for (const m of stored.meis) {
+      if (m.phone === '5511999990001') m.updatedAt = '2026-10-14T12:00:00.000Z';
+    }
+    fs.writeFileSync(storeFile, JSON.stringify(stored, null, 2));
 
     // Another MEI already reminded for this due date
     store.upsertMei({
@@ -110,8 +123,16 @@ test('runDasRemindersJob: dry-run and dedup execution', async () => {
     assert.equal(dryRunResult.totalMeis, 2);
     assert.equal(dryRunResult.eligible, 2);
     assert.equal(dryRunResult.skippedAlreadyReminded, 1);
-    assert.equal(dryRunResult.sent, 1);
+    // Dry-run previews without sending or marking: sent stays 0.
+    assert.equal(dryRunResult.sent, 0);
     assert.equal(dryRunResult.dryRun, true);
+    assert.equal(dryRunResult.details.length, 1);
+    assert.equal(dryRunResult.details[0].phone, '5511999990001');
+    // Ana is inside the 24h window, so the preview channel is the
+    // free session message, not the template.
+    assert.equal(dryRunResult.details[0].channel, 'session');
+    assert.equal(dryRunResult.details[0].sent, false);
+    assert.equal(dryRunResult.details[0].reason, 'dry-run');
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }

@@ -124,7 +124,12 @@ export async function handleIncomingMessage(
 
 function ensureMei(phone: string): MeiProfile {
   const existing = store.getMei(phone);
-  if (existing) return existing;
+  // Touch updatedAt on every incoming message: it is the
+  // last-interaction timestamp the reminder job uses for the 24h
+  // window. Without this, a user who only chats (no profile change)
+  // would be misclassified as outside the window and get the paid
+  // template instead of the free session message.
+  if (existing) return store.upsertMei(existing);
   return store.upsertMei({ phone, name: 'Empreendedor(a)', updatedAt: '' });
 }
 
