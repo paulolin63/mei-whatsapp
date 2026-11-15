@@ -11,18 +11,18 @@
  * rule carries the disclaimer that a human accountant has the final word.
  */
 import { KeywordClassifier, parseAmountBrl } from '../receipts/classify';
-import { StubOcrProvider } from '../receipts/ocr';
+import { createOcrProvider } from '../receipts/ocr';
 import { formatBrl, nextDueDate, ANNUAL_CAP_BRL } from '../mei/das';
 import { getMunicipality, summarizeMunicipality } from '../mei/nfse';
 import { store } from '../store/db';
-import type { IncomingMessage, MeiProfile } from '../types';
+import { downloadMedia } from './client';
+import type { IncomingMessage, MeiProfile, ReceiptCategory } from '../types';
 
 const DISCLAIMER =
   '\n\n⚠️ Sou um assistente, não substituo um contador. ' +
   'Confira valores e prazos no Portal do Empreendedor ou com o seu contador.';
 
 const classifier = new KeywordClassifier();
-const ocr = new StubOcrProvider();
 
 /**
  * Extract the incoming messages from a WhatsApp Cloud API webhook body.
@@ -160,26 +160,53 @@ export function answerQuestion(phone: string, text: string): string {
   );
 }
 
-/** Receipt intake: OCR stub → keyword classification → store → reply. */
+/** Receipt intake: download image -> OCR provider -> classification -> store -> reply. */
 export async function handleReceiptPhoto(
   message: IncomingMessage,
 ): Promise<string> {
   ensureMei(message.from);
-  // v0.1 does not download the media: without a real OCR provider
-  // there is nothing to extract from. The caption is classified instead.
+
+  let mediaBuffer: Buffer = Buffer.alloc(0);
+  let mimeType = 'image/jpeg';
+
+  if (message.mediaId) {
+    const downloaded = await downloadMedia(message.mediaId);
+    if (downloaded) {
+      mediaBuffer = downloaded.buffer;
+      mimeType = downloaded.mimeType;
+    }
+  }
+
+  const ocrProvider = createOcrProvider();
+  const ocrResult = await ocrProvider.extractText(mediaBuffer, mimeType);
+
   const sourceText = message.caption ?? '';
-  const ocrResult = await ocr.extractText(Buffer.alloc(0));
   const text = ocrResult.text || sourceText;
-  const classification = classifier.classify(text);
-  const amount = parseAmountBrl(text);
+
+  // Amount priority: structured OCR amount -> text regex parse
+  const amount = ocrResult.amountBrl ?? parseAmountBrl(text);
+
+  // Category priority: structured OCR category -> keyword classifier
+  let category: ReceiptCategory = ocrResult.suggestedCategory ?? 'outros';
+  let confidence = ocrResult.confidence;
+  let matchedKeywords: string[] = [];
+
+  if (!ocrResult.suggestedCategory) {
+    const fallbackClassification = classifier.classify(text);
+    category = fallbackClassification.category;
+    confidence = fallbackClassification.confidence;
+    matchedKeywords = fallbackClassification.matchedKeywords;
+  } else {
+    matchedKeywords = [ocrProvider.name];
+  }
 
   const receipt = store.addReceipt({
     phone: message.from,
     mediaId: message.mediaId,
     extractedText: text,
-    category: classification.category,
-    confidence: classification.confidence,
-    matchedKeywords: classification.matchedKeywords,
+    category,
+    confidence,
+    matchedKeywords,
     amountBrl: amount,
   });
 
@@ -192,17 +219,33 @@ export async function handleReceiptPhoto(
     outros: 'Outros',
   };
 
-  return (
-    `Comprovante registrado ✅\n` +
-    `• Categoria: ${categoryLabels[receipt.category]}` +
-    (amount ? `\n• Valor: ${formatBrl(amount)}` : '') +
-    (classification.matchedKeywords.length > 0
-      ? `\n• Base: ${classification.matchedKeywords.join(', ')}`
-      : '') +
-    `\n• Confiança: ${Math.round(classification.confidence * 100)}%` +
-    (text
-      ? ''
-      : '\n\nNão consegui ler o texto da foto (OCR ainda não configurado). Se quiser, envie o valor e a descrição por texto que eu classifico.') +
-    DISCLAIMER
-  );
+  const lines = [
+    `Comprovante registrado ✅`,
+    `• Categoria: ${categoryLabels[receipt.category] ?? 'Outros'}`,
+  ];
+
+  if (amount) {
+    lines.push(`• Valor: ${formatBrl(amount)}`);
+  }
+  if (ocrResult.merchantName) {
+    lines.push(`• Estabelecimento: ${ocrResult.merchantName}`);
+  }
+  if (ocrResult.cnpj) {
+    lines.push(`• CNPJ: ${ocrResult.cnpj}`);
+  }
+  if (ocrResult.date) {
+    lines.push(`• Data: ${ocrResult.date}`);
+  }
+  if (matchedKeywords.length > 0 && !ocrResult.suggestedCategory) {
+    lines.push(`• Palavras-chave: ${matchedKeywords.join(', ')}`);
+  }
+  lines.push(`• Confiança: ${Math.round(confidence * 100)}% (${ocrProvider.name})`);
+
+  if (!text && !amount) {
+    lines.push(
+      '\nNão consegui ler o texto da foto (OCR ainda sem dados). Se quiser, envie o valor e a descrição por texto.',
+    );
+  }
+
+  return lines.join('\n') + DISCLAIMER;
 }

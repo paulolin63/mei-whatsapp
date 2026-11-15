@@ -31,9 +31,24 @@ function localDate(year: number, month: number, day: number): Date {
   return new Date(year, month - 1, day);
 }
 
-test('dasDueDate: 20th on a weekday stays the 20th', () => {
-  // 2026-11-20 is a Friday.
-  assert.equal(iso(dasDueDate(2026, 11)), '2026-11-20');
+test('dasDueDate: 20th on an ordinary weekday stays the 20th', () => {
+  // 2026-10-20 is a Tuesday (no holiday).
+  assert.equal(iso(dasDueDate(2026, 10)), '2026-10-20');
+  // 2026-08-20 is a Thursday (no holiday).
+  assert.equal(iso(dasDueDate(2026, 8)), '2026-08-20');
+});
+
+test('dasDueDate: Nov 20 on Consciência Negra rolls past weekend to Monday', () => {
+  // 2026-11-20 is Friday + National Holiday (Consciência Negra, Lei 14.759/2023)
+  // Rolls: Fri 20 (Holiday) -> Sat 21 (Weekend) -> Sun 22 (Weekend) -> Mon 23 (Business Day)
+  assert.equal(iso(dasDueDate(2026, 11)), '2026-11-23');
+});
+
+test('dasDueDate: 20th on Sunday + 21st on Tiradentes rolls to Tuesday', () => {
+  // In 2025, April 20 is Easter Sunday.
+  // April 21 is Tiradentes (National Holiday).
+  // Due date must roll to Tuesday 2025-04-22.
+  assert.equal(iso(dasDueDate(2025, 4)), '2025-04-22');
 });
 
 test('dasDueDate: 20th on a Sunday rolls to Monday', () => {
@@ -54,26 +69,29 @@ test('dasDueDate: rejects an invalid month', () => {
   assert.throws(() => dasDueDate(2026, 13), RangeError);
 });
 
-test('isBusinessDay: weekend vs weekday', () => {
-  // 2026-11-21 Saturday, 2026-11-22 Sunday, 2026-11-20 Friday.
+test('isBusinessDay: weekend vs weekday vs holiday', () => {
+  // 2026-11-21 Saturday, 2026-11-22 Sunday -> not business days
   assert.equal(isBusinessDay(localDate(2026, 11, 21)), false);
   assert.equal(isBusinessDay(localDate(2026, 11, 22)), false);
-  assert.equal(isBusinessDay(localDate(2026, 11, 20)), true);
+  // 2026-11-20 Friday is Consciência Negra (national holiday) -> not business day
+  assert.equal(isBusinessDay(localDate(2026, 11, 20)), false);
+  // 2026-11-13 Friday is an ordinary workday -> business day
+  assert.equal(isBusinessDay(localDate(2026, 11, 13)), true);
 });
 
 test('nextDueDate: returns this month when the due date has not passed', () => {
-  // On 2026-11-10 the November due date (Fri 2026-11-20) is still ahead.
-  assert.equal(iso(nextDueDate(localDate(2026, 11, 10))), '2026-11-20');
+  // On 2026-10-10 the October due date (Tue 2026-10-20) is still ahead.
+  assert.equal(iso(nextDueDate(localDate(2026, 10, 10))), '2026-10-20');
 });
 
 test('nextDueDate: on the due date itself, returns today', () => {
-  assert.equal(iso(nextDueDate(localDate(2026, 11, 20))), '2026-11-20');
+  assert.equal(iso(nextDueDate(localDate(2026, 10, 20))), '2026-10-20');
 });
 
-test('nextDueDate: after the due date, returns next month (with weekend roll)', () => {
-  // 2026-11-21 is past the November due date; next is December,
-  // whose 20th is a Sunday -> Monday 2026-12-21.
-  assert.equal(iso(nextDueDate(localDate(2026, 11, 21))), '2026-12-21');
+test('nextDueDate: after the due date, returns next month (honouring holidays & weekends)', () => {
+  // 2026-10-21 is past the October due date; next is November,
+  // whose 20th is Consciência Negra (Fri holiday) -> rolls to Monday 2026-11-23.
+  assert.equal(iso(nextDueDate(localDate(2026, 10, 21))), '2026-11-23');
 });
 
 test('daysUntil: counts whole days between dates', () => {

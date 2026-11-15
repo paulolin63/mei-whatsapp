@@ -19,12 +19,14 @@ está — o WhatsApp — e fala a língua dele: foto, áudio e texto curto.
 
 ## O que o MVP faz (v0.1)
 
-- **Foto de comprovante** → classifica a despesa por palavras-chave
-  (alimentação, transporte, material, serviço, imposto, outros) e salva.
+- **Foto de comprovante** → download da mídia via WhatsApp Cloud API e
+  extração inteligente com **Gemini Multimodal OCR** (lê valor, CNPJ,
+  estabelecimento, data e categoria de despesa; com fallback para stub).
 - **Perguntas e respostas** sobre DAS (vencimento), NFS-e por cidade e
   teto anual de R$ 81 mil.
-- **Lembrete de DAS** — gera o aviso quando o vencimento está a até
-  7 dias, com a regra do dia 20 e o adiamento para o próximo dia útil.
+- **Lembrete e vencimento do DAS** — calcula o próximo dia 20 considerando
+  fins de semana e **feriados nacionais e bancários** (adiamento para o
+  próximo dia útil, incluindo a Lei 14.759/2023 - Consciência Negra).
 - **Cadastro de NFS-e por cidade** (semente: São Paulo, Marília,
   Campinas, Rio de Janeiro, Belo Horizonte) com o portal oficial.
 - **Alerta de teto** — avisa a partir de 90% do faturamento anual.

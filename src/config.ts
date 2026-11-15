@@ -27,6 +27,13 @@ export const config = {
     apiVersion: 'v21.0',
   },
 
+  gemini: {
+    /** Gemini API key for OCR and receipt understanding. Empty = stub mode. */
+    apiKey: process.env.GEMINI_API_KEY ?? '',
+    /** Gemini model to use for multimodal OCR. */
+    model: process.env.GEMINI_MODEL ?? 'gemini-2.5-flash',
+  },
+
   /** Directory holding the JSON store files. */
   dataDir: path.resolve(process.cwd(), process.env.DATA_DIR ?? 'data'),
 } as const;

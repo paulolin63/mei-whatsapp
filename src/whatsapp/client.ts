@@ -64,3 +64,67 @@ export async function sendTextMessage(
   };
   return { sent: true, messageId: data.messages?.[0]?.id };
 }
+
+export interface DownloadedMedia {
+  buffer: Buffer;
+  mimeType: string;
+}
+
+/**
+ * Download a media file (e.g. receipt photo) from WhatsApp Cloud API.
+ * Returns null if client is not configured or download fails.
+ */
+export async function downloadMedia(
+  mediaId: string,
+): Promise<DownloadedMedia | null> {
+  if (!isConfigured()) {
+    console.log(`[whatsapp] not configured — skipping download for mediaId ${mediaId}`);
+    return null;
+  }
+
+  try {
+    const metaUrl =
+      `https://graph.facebook.com/${config.whatsapp.apiVersion}/${mediaId}`;
+
+    const metaRes = await fetch(metaUrl, {
+      headers: {
+        Authorization: `Bearer ${config.whatsapp.token}`,
+      },
+    });
+
+    if (!metaRes.ok) {
+      console.error(`[whatsapp] failed to fetch media url (${metaRes.status})`);
+      return null;
+    }
+
+    const metaData = (await metaRes.json()) as {
+      url?: string;
+      mime_type?: string;
+    };
+
+    if (!metaData.url) {
+      return null;
+    }
+
+    const fileRes = await fetch(metaData.url, {
+      headers: {
+        Authorization: `Bearer ${config.whatsapp.token}`,
+        'User-Agent': 'curl/7.64.1',
+      },
+    });
+
+    if (!fileRes.ok) {
+      console.error(`[whatsapp] failed to download media file (${fileRes.status})`);
+      return null;
+    }
+
+    const arrayBuffer = await fileRes.arrayBuffer();
+    return {
+      buffer: Buffer.from(arrayBuffer),
+      mimeType: metaData.mime_type ?? 'image/jpeg',
+    };
+  } catch (err) {
+    console.error('[whatsapp] media download error:', err);
+    return null;
+  }
+}

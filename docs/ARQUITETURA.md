@@ -80,15 +80,15 @@ Express; o store nunca é acessado fora de `store/db.ts`.
 
 ```
 foto (+ legenda opcional)
-  → OCR stub (v0.1 não baixa a mídia nem extrai texto)
-  → classifica a legenda por palavras-chave (KeywordClassifier)
-  → parse de valor "R$ 1.234,56" quando presente
+  → download da imagem via Meta Graph API (client.downloadMedia)
+  → extração multimodal (GeminiOcrProvider com fallback para StubOcrProvider)
+  → dados estruturados: valor, categoria, CNPJ, estabelecimento, data
   → salva em store.addReceipt()
-  → responde: categoria, valor, palavras que decidiram, confiança
+  → responde: categoria, valor, estabelecimento, CNPJ, data e confiança
 ```
 
-Troca futura: implementar `OcrProvider` real e baixar a mídia com o
-`mediaId` via Graph API; o resto do fluxo não muda.
+Configuração: defina `GEMINI_API_KEY` no `.env` para OCR real. Sem chave,
+o sistema roda em modo stub/legenda sem quebrar.
 
 ## 6. Modelo de dados
 
@@ -193,7 +193,7 @@ America/Sao_Paulo, ou um endpoint manual no piloto).
 
 ## 10. Limitações conhecidas (honestas)
 
-- O cálculo do vencimento ignora **feriados** (só pula fim de semana).
+- O cálculo do vencimento cobre feriados **nacionais e bancários** (Carnaval, Sexta-feira Santa, Corpus Christi e datas fixas incluindo Consciência Negra). Feriados **municipais** específicos ainda não são modelados.
 - O valor do DAS não é calculado (depende da atividade do MEI).
 - O cadastro de NFS-e tem 5 cidades-semente; cada entrada precisa de
   revisão humana com a fonte oficial antes de responder ao usuário.

@@ -3,9 +3,9 @@
  *
  * Sources: the MEI monthly DAS is due on the 20th of each month
  * (referring to the previous month's revenue). When the 20th falls on
- * a non-business day, the due date moves to the next business day
- * (Receita Federal rule). The annual gross-revenue cap for MEI is
- * R$ 81,000 (R$ 6,750 per month, pro-rata for the months the MEI
+ * a non-business day (weekend or banking holiday), the due date moves to
+ * the next business day (Receita Federal rule). The annual gross-revenue cap
+ * for MEI is R$ 81,000 (R$ 6,750 per month, pro-rata for the months the MEI
  * was active in the year).
  *
  * ⚠️ Legal scope: this module encodes the *calendar* rules only.
@@ -13,6 +13,8 @@
  * commerce/industry, services, or both) and it is not tax advice.
  * See docs/ESPEC.md and the DISCLAIMER in README.md.
  */
+
+import { isNationalOrBankingHoliday } from './holidays';
 
 /** Day of the month the DAS is due. */
 export const DAS_DUE_DAY = 20;
@@ -27,13 +29,14 @@ export const MONTHLY_CAP_BRL = 6_750;
 export const CAP_WARNING_THRESHOLD = 0.9;
 
 /**
- * True for Monday–Friday. National and municipal holidays are NOT
- * modelled in v0.1 — the roll-forward only skips weekends, and the
- * docs warn that holidays need a holiday calendar before production.
+ * True for Monday–Friday, excluding Brazilian national and banking holidays.
  */
 export function isBusinessDay(date: Date): boolean {
   const day = date.getDay();
-  return day !== 0 && day !== 6; // not Sunday, not Saturday
+  if (day === 0 || day === 6) {
+    return false; // not Sunday, not Saturday
+  }
+  return !isNationalOrBankingHoliday(date);
 }
 
 /** Advance `date` (a copy) until it lands on a business day. */
