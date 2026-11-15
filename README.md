@@ -72,6 +72,20 @@ envios viram log (`[whatsapp] not configured`) — dá para testar
    `https://<seu-dominio>/webhook` com o `WHATSAPP_VERIFY_TOKEN`.
 3. Envie uma mensagem para o número de teste e veja a resposta.
 
+### Disparo de lembretes (Cron)
+
+O assistente envia lembretes a até 7 dias do vencimento. O disparo pode ser
+acionado diariamente por um cron job externo (ex.: 09:00 no fuso de Brasília):
+
+```bash
+curl -X POST "http://localhost:3000/jobs/reminders?secret=SEU_CRON_SECRET"
+# ou para simular sem disparar mensagens:
+curl "http://localhost:3000/jobs/reminders?secret=SEU_CRON_SECRET&dryRun=true"
+```
+
+Dentro da janela de 24h, o envio usa mensagem de texto livre; fora dela,
+usa o template aprovado `lembrete_das_vencimento` (veja `docs/WHATSAPP_TEMPLATE.md`).
+
 ## Estrutura do projeto
 
 ```

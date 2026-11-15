@@ -54,4 +54,4 @@ Exemplo preenchido:
 
 - [ ] Submetido para aprovação (data: ___)
 - [ ] Aprovado (data: ___)
-- [ ] Endpoint de envio (cron) implementado — próximo passo (B)
+- [x] Endpoint de envio (cron) implementado (`POST /jobs/reminders` e `GET /jobs/reminders`)

@@ -120,6 +120,43 @@ export class JsonStore {
     return phone ? all.filter((d) => d.phone === phone) : all;
   }
 
+  /**
+   * Check whether a DAS reminder has already been sent for this due date.
+   */
+  hasBeenReminded(phone: string, dueDate: string): boolean {
+    const deadlines = this.listDeadlines(phone);
+    return deadlines.some(
+      (d) => d.kind === 'DAS' && d.dueDate === dueDate && Boolean(d.remindedAt),
+    );
+  }
+
+  /**
+   * Mark a DAS reminder as sent so we do not send duplicate notifications.
+   */
+  markDeadlineReminded(
+    phone: string,
+    dueDate: string,
+    remindedAt: string = new Date().toISOString(),
+  ): void {
+    const data = this.read();
+    const existing = data.deadlines.find(
+      (d) => d.phone === phone && d.dueDate === dueDate && d.kind === 'DAS',
+    );
+    if (existing) {
+      existing.remindedAt = remindedAt;
+    } else {
+      data.deadlines.push({
+        id: randomUUID(),
+        phone,
+        kind: 'DAS',
+        dueDate,
+        description: `DAS com vencimento em ${dueDate}`,
+        remindedAt,
+      });
+    }
+    this.write(data);
+  }
+
   // -- internals -----------------------------------------------------------
 
   private read(): StoreData {

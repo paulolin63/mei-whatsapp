@@ -118,15 +118,117 @@ export function capWarning(
   };
 }
 
-/** Generate all due reminders for a list of MEIs (DAS only, for now). */
-export function generateReminders(
-  meis: MeiProfile[],
-  from: Date = new Date(),
-): Reminder[] {
-  const out: Reminder[] = [];
+import { store, JsonStore } from '../store/db';
+import { sendDasReminderSmart } from '../whatsapp/client';
+
+export interface ReminderRunResult {
+  totalMeis: number;
+  eligible: number;
+  skippedAlreadyReminded: number;
+  sent: number;
+  dryRun: boolean;
+  details: Array<{
+    phone: string;
+    dueDate: string;
+    channel: 'session' | 'template';
+    sent: boolean;
+    reason?: string;
+  }>;
+}
+
+/**
+ * Format the first name of a MEI for the template.
+ */
+export function extractFirstName(fullName: string): string {
+  const clean = fullName.trim().split(/\s+/)[0] ?? 'Empreendedor(a)';
+  return clean || 'Empreendedor(a)';
+}
+
+/**
+ * Run the DAS reminder job over all MEIs in the store.
+ * - Filters for MEIs within the 7-day reminder window
+ * - Skips MEIs that were already reminded for this due date
+ * - Dispatches via session text (<=24h) or template (>24h)
+ * - Marks deadline as reminded in the store
+ */
+export async function runDasRemindersJob(options: {
+  storeInstance?: JsonStore;
+  now?: Date;
+  dryRun?: boolean;
+} = {}): Promise<ReminderRunResult> {
+  const currentStore = options.storeInstance ?? store;
+  const now = options.now ?? new Date();
+  const isDryRun = Boolean(options.dryRun);
+
+  const meis = currentStore.listMeis();
+  const details: ReminderRunResult['details'] = [];
+
+  let eligible = 0;
+  let skippedAlreadyReminded = 0;
+  let sent = 0;
+
   for (const mei of meis) {
-    const reminder = dasReminder(mei, from);
-    if (reminder) out.push(reminder);
+    const reminder = dasReminder(mei, now);
+    if (!reminder) continue;
+
+    eligible++;
+
+    if (currentStore.hasBeenReminded(mei.phone, reminder.dueDate)) {
+      skippedAlreadyReminded++;
+      continue;
+    }
+
+    const firstName = extractFirstName(mei.name);
+    const dueYear = Number.parseInt(reminder.dueDate.slice(0, 4), 10);
+    const amountData = mei.activity ? tryDasAmount(mei.activity, dueYear) : undefined;
+    const amountStr = amountData ? formatBrl(amountData.totalBrl) : 'a conferir';
+
+    // Format dueDate to DD/MM/YYYY for the template
+    const [year, month, day] = reminder.dueDate.split('-');
+    const dueDateStr = `${day}/${month}/${year}`;
+
+    if (isDryRun) {
+      details.push({
+        phone: mei.phone,
+        dueDate: reminder.dueDate,
+        channel: 'template',
+        sent: true,
+        reason: 'dry-run',
+      });
+      sent++;
+      continue;
+    }
+
+    const dispatch = await sendDasReminderSmart({
+      to: mei.phone,
+      name: firstName,
+      dueDateStr,
+      amountStr,
+      sessionBody: reminder.message,
+      lastInteractionAt: mei.updatedAt,
+      now,
+    });
+
+    details.push({
+      phone: mei.phone,
+      dueDate: reminder.dueDate,
+      channel: dispatch.channel,
+      sent: dispatch.sent,
+      reason: dispatch.reason,
+    });
+
+    if (dispatch.sent) {
+      currentStore.markDeadlineReminded(mei.phone, reminder.dueDate, now.toISOString());
+      sent++;
+    }
   }
-  return out;
+
+  return {
+    totalMeis: meis.length,
+    eligible,
+    skippedAlreadyReminded,
+    sent,
+    dryRun: isDryRun,
+    details,
+  };
 }

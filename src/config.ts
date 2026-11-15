@@ -34,6 +34,11 @@ export const config = {
     model: process.env.GEMINI_MODEL ?? 'gemini-2.5-flash',
   },
 
+  cron: {
+    /** Secret token required to trigger the cron jobs endpoint. Empty = no secret required. */
+    secret: process.env.CRON_SECRET ?? '',
+  },
+
   /** Directory holding the JSON store files. */
   dataDir: path.resolve(process.cwd(), process.env.DATA_DIR ?? 'data'),
 } as const;

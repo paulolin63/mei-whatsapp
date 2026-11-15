@@ -15,6 +15,7 @@ import {
   handleIncomingMessage,
   parseWebhookBody,
 } from './whatsapp/webhook';
+import { runDasRemindersJob } from './jobs/reminders';
 
 const app = express();
 app.use(express.json({ limit: '1mb' }));
@@ -25,13 +26,53 @@ app.get('/', (_req: Request, res: Response) => {
     version: '0.1.0',
     description:
       'Assistente de MEI no WhatsApp — scaffold v0.1 (não substitui um contador).',
-    endpoints: ['GET /health', 'GET /webhook', 'POST /webhook'],
+    endpoints: [
+      'GET /health',
+      'GET /webhook',
+      'POST /webhook',
+      'POST /jobs/reminders (requer CRON_SECRET)',
+    ],
   });
 });
 
 app.get('/health', (_req: Request, res: Response) => {
   res.json({ ok: true, at: new Date().toISOString() });
 });
+
+/**
+ * Check if the caller is authorized to trigger scheduled cron jobs.
+ */
+function isCronAuthorized(req: Request): boolean {
+  if (!config.cron.secret) return true; // If no secret configured in dev, allow
+
+  const authHeader = req.headers.authorization;
+  const bearerToken = authHeader?.startsWith('Bearer ')
+    ? authHeader.slice(7).trim()
+    : undefined;
+  const querySecret = req.query.secret as string | undefined;
+
+  return bearerToken === config.cron.secret || querySecret === config.cron.secret;
+}
+
+// Scheduled job: DAS due-date reminders (can be called by external cron or manually)
+async function handleRemindersJob(req: Request, res: Response): Promise<void> {
+  if (!isCronAuthorized(req)) {
+    res.status(401).json({ error: 'Unauthorized: invalid or missing CRON_SECRET' });
+    return;
+  }
+
+  const dryRun = req.query.dryRun === 'true' || req.body?.dryRun === true;
+  try {
+    const result = await runDasRemindersJob({ dryRun });
+    res.json({ ok: true, result });
+  } catch (err) {
+    console.error('[jobs] reminders job failed:', err);
+    res.status(500).json({ ok: false, error: 'Internal job execution error' });
+  }
+}
+
+app.post('/jobs/reminders', handleRemindersJob);
+app.get('/jobs/reminders', handleRemindersJob);
 
 // Meta webhook verification: GET with hub.mode=subscribe, hub.verify_token
 // and hub.challenge. Returns the challenge only when the token matches.
