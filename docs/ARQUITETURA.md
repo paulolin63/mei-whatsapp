@@ -42,13 +42,14 @@ Express; o store nunca é acessado fora de `store/db.ts`.
 | `src/config.ts` | Variáveis de ambiente com defaults seguros | dotenv |
 | `src/types.ts` | Tipos de domínio (sem imports de framework) | — |
 | `src/whatsapp/client.ts` | Envio de texto via Graph API; no-op com log se não configurado | fetch global, config |
-| `src/whatsapp/webhook.ts` | Parse do payload da Meta; roteamento texto/foto; Q&A por palavras-chave | classify, ocr, das, nfse, store |
+| `src/whatsapp/webhook.ts` | Parse do payload da Meta; roteamento texto/foto; Q&A por palavras-chave (inclui valor do DAS e gravação da atividade) | classify, ocr, das, dasAmount, nfse, store |
 | `src/mei/das.ts` | Regras do DAS: dia 20, dia útil, teto R$ 81 mil, proporcional | — |
+| `src/mei/dasAmount.ts` | Valor do DAS por atividade (tabela oficial anual, mínimo por decreto) | das, types |
 | `src/mei/nfse.ts` | Cadastro de NFS-e por município (dados, não lei) | — |
 | `src/receipts/classify.ts` | Classificador por palavras-chave + interface `ReceiptClassifier` | types |
-| `src/receipts/ocr.ts` | Interface `OcrProvider` + stub sem provedor | — |
+| `src/receipts/ocr.ts` | GeminiOcrProvider (multimodal) + stub quando não há chave | config |
 | `src/store/db.ts` | JSON store em `data/store.json`; interface de repositório | config, types |
-| `src/jobs/reminders.ts` | Geração pura de lembretes (DAS ≤ 7 dias; alerta de teto ≥ 90%) | das |
+| `src/jobs/reminders.ts` | Geração pura de lembretes (DAS ≤ 7 dias, com o valor quando a atividade é conhecida; alerta de teto ≥ 90%) | das, dasAmount |
 
 ## 3. Fluxo do webhook (WhatsApp Cloud API)
 
@@ -69,10 +70,12 @@ Express; o store nunca é acessado fora de `store/db.ts`.
 ## 4. Fluxo de mensagem (texto)
 
 ```
-"quando vence o DAS?"
-  → Q&A detecta "das"/"vencimento"
-  → nextDueDate() (dia 20 ou próximo dia útil)
-  → resposta com a data + aviso de que o valor depende da atividade
+"quanto é o DAS?"
+  → Q&A detecta "das"/"valor"/"quanto"
+  → nextDueDate() (dia 20 ou próximo dia útil) + calculateDasAmount()
+    (atividade do perfil, se conhecida)
+  → resposta com a data e o valor exato; sem atividade, responde a
+    tabela de 3 valores e pede a atividade ("minha atividade é serviços")
   + disclaimer (contador tem a palavra final)
 ```
 
@@ -102,6 +105,7 @@ Arquivo único `data/store.json` (gitignorado), 3 coleções:
       "name": "Maria",
       "cnpj": "12345678000199",        // opcional
       "municipalityIbge": "3529005",   // Marília
+      "activity": "servicos",          // decide o valor do DAS
       "openedAt": "2024-03-01",
       "updatedAt": "2026-11-14T10:00:00.000Z"
     }
@@ -178,7 +182,9 @@ CREATE TABLE deadlines (
 de rede): `dasReminder()` (vencimento a ≤ 7 dias), `capWarning()`
 (faturamento ≥ 90% do teto), `generateReminders()` (lote). O envio é
 responsabilidade de quem chama (um cron diário às 09:00
-America/Sao_Paulo, ou um endpoint manual no piloto).
+America/Sao_Paulo, ou um endpoint manual no piloto). Quando a
+atividade do MEI é conhecida, `dasReminder()` inclui o valor exato do
+DAS na mensagem; sem atividade, mantém o aviso de conferir no Portal.
 
 ## 9. Segurança e privacidade (v0.1)
 
@@ -194,7 +200,9 @@ America/Sao_Paulo, ou um endpoint manual no piloto).
 ## 10. Limitações conhecidas (honestas)
 
 - O cálculo do vencimento cobre feriados **nacionais e bancários** (Carnaval, Sexta-feira Santa, Corpus Christi e datas fixas incluindo Consciência Negra). Feriados **municipais** específicos ainda não são modelados.
-- O valor do DAS não é calculado (depende da atividade do MEI).
+- O valor do DAS segue a tabela oficial anual (salário mínimo por
+  decreto); um ano sem linha na tabela faz o código recusar o cálculo
+  em vez de chutar — a tabela precisa de revisão todo janeiro.
 - O cadastro de NFS-e tem 5 cidades-semente; cada entrada precisa de
   revisão humana com a fonte oficial antes de responder ao usuário.
 - O classificador é por palavras-chave e erra em texto ambíguo — a

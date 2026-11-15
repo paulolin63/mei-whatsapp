@@ -35,6 +35,7 @@ instalar, nada de login: foto, texto e lembrete.
 |---|---|---|
 | 1 | **Recebimento de foto de comprovante** + classificação por palavras-chave (stub) | ✅ estrutura pronta; OCR é stub |
 | 2 | **Cálculo do vencimento do DAS** — dia 20, adia para o próximo dia útil quando cai no fim de semana | ✅ com testes |
+| 2b | **Cálculo do valor do DAS por atividade** — tabela oficial anual (INSS 5% do mínimo + ICMS R$ 1 / ISS R$ 5; Caminhoneiro 12%) | ✅ com testes |
 | 3 | **Lembretes de DAS** — gera aviso quando o vencimento está a até 7 dias | ✅ geração (envio depende de token) |
 | 4 | **Cadastro de NFS-e por município** (semente: SP, Marília, Campinas, RJ, BH) + portal oficial | ✅ estrutura pronta |
 | 5 | **Perguntas e respostas** sobre regras (DAS, NFS-e, teto) via WhatsApp | ✅ stub por palavras-chave |
@@ -43,8 +44,8 @@ instalar, nada de login: foto, texto e lembrete.
 
 ### O que o MVP explicitamente NÃO faz
 
-- Não calcula o **valor** do DAS (depende da atividade: comércio,
-  serviços ou ambos) — apenas o vencimento.
+- Não calcula **multa e juros** de DAS em atraso, nem o valor de anos
+  sem tabela oficial (o código recusa calcular em vez de chutar).
 - Não emite NFS-e nem acessa portal de prefeitura.
 - Não faz a DASN-SIMEI (declaração anual) — roadmap v0.3.
 - Não dá consultoria fiscal: toda resposta carrega o aviso de que um
@@ -100,7 +101,7 @@ antes de escrever mais código.
 | Regras municipais desatualizadas | Cadastro versionado por cidade, com fonte e data; alerta quando a regra não foi revisada há > 90 dias |
 | WhatsApp Cloud API: custo por conversa e limites de template após 24h | Orçamento por conversa no piloto; mensagens fora da janela de 24h usam template aprovado |
 | LGPD: fotos de comprovantes contêm dados pessoais/fiscais | Dados em store local no piloto; plano: criptografia, exportação e exclusão sob pedido; nunca treinar modelo com dados do usuário sem consentimento |
-| Feriados não modelados no cálculo do vencimento | Documentado em `src/mei/das.ts`; feriados entram antes da produção (calendário oficial) |
+| Feriados municipais não modelados no cálculo do vencimento | Feriados nacionais e bancários já estão no calendário (`src/mei/holidays.ts`); municipais entram antes da produção |
 | Baixa disposição de pagar (R$ 9–19 observado em produtos vizinhos) | Validar preço no piloto antes de precificar; testar R$ 19 vs R$ 29 |
 
 ## 9. Métricas de produto (pós-piloto)

@@ -9,9 +9,10 @@
  * was active in the year).
  *
  * ⚠️ Legal scope: this module encodes the *calendar* rules only.
- * It does not compute the DAS amount (that depends on the activity:
- * commerce/industry, services, or both) and it is not tax advice.
- * See docs/ESPEC.md and the DISCLAIMER in README.md.
+ * The DAS *amount* (by activity) lives in ./dasAmount.ts — it uses
+ * the official minimum-wage table and must be updated every January.
+ * Neither module is tax advice. See docs/ESPEC.md and the DISCLAIMER
+ * in README.md.
  */
 
 import { isNationalOrBankingHoliday } from './holidays';
@@ -124,10 +125,14 @@ export function capStatus(
 
 /** Format a BRL amount as pt-BR currency, e.g. "R$ 1.234,56". */
 export function formatBrl(value: number): string {
-  return value.toLocaleString('pt-BR', {
-    style: 'currency',
-    currency: 'BRL',
-  });
+  // toLocaleString inserts a non-breaking space after "R$"; use a
+  // plain space so the text matches what users type (and tests assert).
+  return value
+    .toLocaleString('pt-BR', {
+      style: 'currency',
+      currency: 'BRL',
+    })
+    .replace(/\u00a0/g, ' ');
 }
 
 function startOfDay(date: Date): Date {

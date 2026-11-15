@@ -13,10 +13,21 @@
 import { KeywordClassifier, parseAmountBrl } from '../receipts/classify';
 import { createOcrProvider } from '../receipts/ocr';
 import { formatBrl, nextDueDate, ANNUAL_CAP_BRL } from '../mei/das';
+import {
+  MEI_ACTIVITY_LABELS,
+  describeDasAmount,
+  tryDasAmount,
+  tryDasAmountTable,
+} from '../mei/dasAmount';
 import { getMunicipality, summarizeMunicipality } from '../mei/nfse';
 import { store } from '../store/db';
 import { downloadMedia } from './client';
-import type { IncomingMessage, MeiProfile, ReceiptCategory } from '../types';
+import type {
+  IncomingMessage,
+  MeiActivity,
+  MeiProfile,
+  ReceiptCategory,
+} from '../types';
 
 const DISCLAIMER =
   '\n\n⚠️ Sou um assistente, não substituo um contador. ' +
@@ -106,18 +117,88 @@ function ensureMei(phone: string): MeiProfile {
   return store.upsertMei({ phone, name: 'Empreendedor(a)', updatedAt: '' });
 }
 
-/** Rule-based answers. This is the hook where an LLM Q&A plugs in later. */
-export function answerQuestion(phone: string, text: string): string {
-  ensureMei(phone);
+/**
+ * Parse the MEI's activity from free text, e.g. "minha atividade é
+ * serviços", "sou comércio", "atividade: ambos". Returns undefined
+ * when no activity is named. Order matters: "comércio e serviços"
+ * must be detected before plain "serviços".
+ */
+export function parseActivityFromText(text: string): MeiActivity | undefined {
   const q = text.toLowerCase();
+  if (/\b(caminhoneiro|caminhão|caminhao|transportador)\b/.test(q)) {
+    return 'caminhoneiro';
+  }
+  if (/\b(ambos|os dois|comércio e serviços|comercio e servicos|misto|mista)\b/.test(q)) {
+    return 'comercio_servicos';
+  }
+  if (/\b(serviços|servicos|prestador|prestadora)\b/.test(q)) {
+    return 'servicos';
+  }
+  if (/\b(comércio|comercio|indústria|industria)\b/.test(q)) {
+    return 'comercio';
+  }
+  return undefined;
+}
 
-  if (q.includes('das') || q.includes('vencimento') || q.includes('prazo')) {
-    const due = nextDueDate();
+/**
+ * Pure DAS reply for one MEI: due date + exact amount when the
+ * activity is known, the 3-row table when it is not. No store
+ * access — unit-testable (see tests/webhook.test.ts).
+ */
+export function buildDasReply(mei: MeiProfile, now: Date = new Date()): string {
+  const due = nextDueDate(now);
+  const dueStr = due.toLocaleDateString('pt-BR');
+  const year = due.getFullYear();
+  const noTable =
+    `O próximo DAS vence em ${dueStr} (dia 20, ou o próximo dia útil). ` +
+    `A tabela de valores de ${year} ainda não foi publicada — confira no Portal do Empreendedor.` +
+    DISCLAIMER;
+
+  if (mei.activity) {
+    const amount = tryDasAmount(mei.activity, year);
+    if (!amount) return noTable;
     return (
-      `O próximo DAS vence em ${due.toLocaleDateString('pt-BR')} (dia 20, ou o próximo dia útil). ` +
-      `O valor depende da sua atividade — comércio, serviços ou ambos — e deve ser conferido no Portal do Empreendedor.` +
+      `O próximo DAS (${MEI_ACTIVITY_LABELS[mei.activity]}) vence em ${dueStr} (dia 20, ou o próximo dia útil). ` +
+      `Valor: ${describeDasAmount(amount)}. ` +
+      `Confirme a guia no Portal do Empreendedor antes de pagar.` +
       DISCLAIMER
     );
+  }
+
+  const rows = tryDasAmountTable(year);
+  if (!rows) return noTable;
+  const table = rows
+    .map((a) => `• ${MEI_ACTIVITY_LABELS[a.activity]}: ${formatBrl(a.totalBrl)}`)
+    .join('\n');
+  return (
+    `O próximo DAS vence em ${dueStr} (dia 20, ou o próximo dia útil).\n` +
+    `O valor depende da sua atividade (${year}):\n${table}\n` +
+    `Me diga a sua atividade — por exemplo: "minha atividade é serviços" — que eu te passo o valor exato.` +
+    DISCLAIMER
+  );
+}
+
+/** Rule-based answers. This is the hook where an LLM Q&A plugs in later. */
+export function answerQuestion(phone: string, text: string): string {
+  const mei = ensureMei(phone);
+  const q = text.toLowerCase();
+
+  // Setting the activity: "minha atividade é serviços", "sou comércio",
+  // "atividade: ambos". Checked first so the word "atividade" does not
+  // fall through to the DAS Q&A below.
+  if (q.includes('atividade') || q.includes('sou ')) {
+    const activity = parseActivityFromText(text);
+    if (activity) {
+      store.upsertMei({ ...mei, activity });
+      const amount = tryDasAmount(activity, new Date().getFullYear());
+      const amountLine = amount
+        ? ` Seu DAS é ${formatBrl(amount.totalBrl)} por mês (${describeDasAmount(amount)}).`
+        : '';
+      return (
+        `Anotado: sua atividade é ${MEI_ACTIVITY_LABELS[activity]}.${amountLine}` +
+        DISCLAIMER
+      );
+    }
   }
 
   if (q.includes('teto') || q.includes('limite') || q.includes('81')) {
@@ -127,6 +208,18 @@ export function answerQuestion(phone: string, text: string): string {
       `Acima disso é preciso desenquadrar — fale com um contador antes de passar do limite.` +
       DISCLAIMER
     );
+  }
+
+  if (
+    q.includes('das') ||
+    q.includes('vencimento') ||
+    q.includes('prazo') ||
+    q.includes('valor') ||
+    q.includes('quanto') ||
+    q.includes('custa') ||
+    q.includes('pagar')
+  ) {
+    return buildDasReply(mei);
   }
 
   if (q.includes('nota') || q.includes('nfs')) {
@@ -146,16 +239,17 @@ export function answerQuestion(phone: string, text: string): string {
       'Olá! 👋 Sou o assistente do MEI no WhatsApp.\n\n' +
       'O que eu já faço:\n' +
       '• Foto de comprovante → classifico a despesa\n' +
-      '• Pergunte sobre DAS, NFS-e e teto do MEI\n' +
+      '• Pergunte quanto é o DAS e quando vence\n' +
+      '• Pergunte sobre NFS-e e teto do MEI\n' +
       '• Lembro você do vencimento do DAS\n\n' +
-      'Envie uma foto de um comprovante ou pergunte, por exemplo: "quando vence o DAS?"' +
+      'Envie uma foto de um comprovante ou pergunte, por exemplo: "quanto é o DAS?"' +
       DISCLAIMER
     );
   }
 
   return (
-    'Ainda não sei responder isso — meu conhecimento cobre DAS, NFS-e e o teto do MEI. ' +
-    'Tente perguntar, por exemplo: "quando vence o DAS?" ou "qual é o teto do MEI?".' +
+    'Ainda não sei responder isso — meu conhecimento cobre DAS (valor e vencimento), NFS-e e o teto do MEI. ' +
+    'Tente perguntar, por exemplo: "quanto é o DAS?" ou "qual é o teto do MEI?".' +
     DISCLAIMER
   );
 }

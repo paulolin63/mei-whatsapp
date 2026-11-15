@@ -16,6 +16,7 @@ import {
   formatBrl,
   nextDueDate,
 } from '../mei/das';
+import { describeDasAmount, tryDasAmount } from '../mei/dasAmount';
 import type { MeiProfile } from '../types';
 
 export interface Reminder {
@@ -56,6 +57,15 @@ export function dasReminder(
         ? 'vence amanhã'
         : `vence em ${days} dias`;
 
+  // Exact amount when the MEI's activity is known; otherwise the
+  // honest fallback is to point at the Portal, not to guess.
+  const amount = mei.activity
+    ? tryDasAmount(mei.activity, due.getFullYear())
+    : undefined;
+  const valueLine = amount
+    ? `Valor: ${formatBrl(amount.totalBrl)} (${describeDasAmount(amount)}).`
+    : 'O valor depende da sua atividade (comércio, serviços ou ambos) — confira no Portal do Empreendedor ou com o seu contador.';
+
   return {
     phone: mei.phone,
     subject: `DAS ${when}`,
@@ -63,7 +73,7 @@ export function dasReminder(
     message: [
       `Olá, ${mei.name}! 👋`,
       `O DAS referente a ${refMonth} ${when} (${dueStr}).`,
-      'O valor depende da sua atividade (comércio, serviços ou ambos) — confira no Portal do Empreendedor ou com o seu contador.',
+      valueLine,
       'Lembre-se: o DAS em atraso gera multa e juros.',
       '',
       '— Contador MEI no WhatsApp',

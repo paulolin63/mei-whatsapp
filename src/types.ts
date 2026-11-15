@@ -5,6 +5,13 @@
  * the WhatsApp layer, the MEI rules layer and the store.
  */
 
+/** What the MEI does — decides the DAS amount (see src/mei/dasAmount.ts). */
+export type MeiActivity =
+  | 'comercio'
+  | 'servicos'
+  | 'comercio_servicos'
+  | 'caminhoneiro';
+
 /** A registered MEI (Microempreendedor Individual) user. */
 export interface MeiProfile {
   /** WhatsApp phone number in E.164 format, e.g. "5514999998888". */
@@ -15,6 +22,8 @@ export interface MeiProfile {
   cnpj?: string;
   /** IBGE code of the municipality (see src/mei/nfse.ts). */
   municipalityIbge?: string;
+  /** What the MEI does — decides the DAS amount. Set when the user tells us. */
+  activity?: MeiActivity;
   /** When the MEI was opened (ISO date). Used for the proportional cap. */
   openedAt?: string;
   /** ISO timestamp of the last interaction. */

@@ -6,8 +6,8 @@ pergunta sobre DAS, NFS-e e teto → resposta na hora; lembrete do
 vencimento do DAS antes do dia 20.
 
 > **Versão 0.1 — scaffold, não é um produto pronto.** O objetivo é
-> mostrar a arquitetura e o escopo do MVP. Não calcula valores de
-> imposto, não emite nota fiscal e não substitui um contador.
+> mostrar a arquitetura e o escopo do MVP. Calcula o valor fixo do DAS
+> pela tabela oficial, mas não emite nota fiscal e não substitui um contador.
 
 ## Visão
 
@@ -22,11 +22,16 @@ está — o WhatsApp — e fala a língua dele: foto, áudio e texto curto.
 - **Foto de comprovante** → download da mídia via WhatsApp Cloud API e
   extração inteligente com **Gemini Multimodal OCR** (lê valor, CNPJ,
   estabelecimento, data e categoria de despesa; com fallback para stub).
-- **Perguntas e respostas** sobre DAS (vencimento), NFS-e por cidade e
+- **Valor do DAS por atividade** — tabela oficial anual: comércio
+  R$ 82,05, serviços R$ 86,05, comércio e serviços R$ 87,05 (2026,
+  salário mínimo R$ 1.621); MEI Caminhoneiro 12% (R$ 194,52 + tributos
+  variáveis). Diga "minha atividade é serviços" para gravar a sua.
+- **Perguntas e respostas** sobre DAS (valor e vencimento), NFS-e por cidade e
   teto anual de R$ 81 mil.
 - **Lembrete e vencimento do DAS** — calcula o próximo dia 20 considerando
   fins de semana e **feriados nacionais e bancários** (adiamento para o
-  próximo dia útil, incluindo a Lei 14.759/2023 - Consciência Negra).
+  próximo dia útil, incluindo a Lei 14.759/2023 - Consciência Negra);
+  o lembrete traz o valor exato quando a atividade é conhecida.
 - **Cadastro de NFS-e por cidade** (semente: São Paulo, Marília,
   Campinas, Rio de Janeiro, Belo Horizonte) com o portal oficial.
 - **Alerta de teto** — avisa a partir de 90% do faturamento anual.
@@ -73,16 +78,23 @@ src/
     webhook.ts             Parse do payload + roteador de mensagens
   mei/
     das.ts                 Regras do DAS: dia 20, dia útil, teto R$ 81 mil
+    dasAmount.ts           Valor do DAS por atividade (tabela oficial anual)
+    holidays.ts            Feriados nacionais e bancários do Brasil
     nfse.ts                Cadastro de NFS-e por município
   receipts/
     classify.ts            Classificador por palavras-chave (trocável por LLM)
-    ocr.ts                 Interface de OCR + stub (sem provedor ainda)
+    ocr.ts                 Gemini OCR + stub (fallback sem chave)
   store/
     db.ts                  Store JSON em data/ (trocável por Postgres)
   jobs/
     reminders.ts           Geração de lembretes de DAS e alerta de teto
 tests/
   das.test.ts              Testes das regras do DAS (node:test)
+  dasAmount.test.ts        Testes do valor do DAS por atividade
+  holidays.test.ts         Testes do calendário de feriados
+  ocr.test.ts              Testes do OCR (stub + Gemini)
+  webhook.test.ts          Testes das respostas do DAS no WhatsApp
+  reminders.test.ts        Testes do lembrete de DAS com valor
 docs/
   ESPEC.md                 Especificação do produto e plano de validação
   ARQUITETURA.md           Componentes, fluxos e modelo de dados
@@ -90,10 +102,9 @@ docs/
 
 ## Roadmap
 
-- **v0.2** — OCR real (Vision/Textract), download de mídia do WhatsApp,
-  classificação com LLM, histórico de despesas por mês.
-- **v0.3** — DASN-SIMEI (declaração anual), cálculo do valor do DAS por
-  atividade, pagamento via link/boleto.
+- **v0.2** — Classificação de despesas com LLM, histórico de despesas
+  por mês. (OCR real e download de mídia já entraram via Gemini.)
+- **v0.3** — DASN-SIMEI (declaração anual), pagamento via link/boleto.
 - **v1.0** — Postgres, multi-tenant, fila de envio, LGPD (exportar/apagar
   dados), cobrança R$ 19–29/mês.
 
