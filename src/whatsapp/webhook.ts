@@ -19,7 +19,7 @@ import {
   tryDasAmount,
   tryDasAmountTable,
 } from '../mei/dasAmount';
-import { getMunicipality, summarizeMunicipality } from '../mei/nfse';
+import { getMunicipality, summarizeMunicipality, extractCityFromText, listMunicipalities, PORTAL_NACIONAL_URL } from '../mei/nfse';
 import { store } from '../store/db';
 import { downloadMedia } from './client';
 import type {
@@ -222,14 +222,33 @@ export function answerQuestion(phone: string, text: string): string {
     return buildDasReply(mei);
   }
 
-  if (q.includes('nota') || q.includes('nfs')) {
-    const m = getMunicipality('São Paulo');
-    const hint = m
-      ? `\n\nExemplo — ${summarizeMunicipality(m)}`
-      : '';
+  if (q.includes('nota') || q.includes('nfs') || q.includes('nota fiscal')) {
+    // 1. Try to extract city from the message itself ("NFS-e em Curitiba?", "nota de Salvador")
+    const mentioned = extractCityFromText(text);
+    if (mentioned) {
+      return summarizeMunicipality(mentioned) + DISCLAIMER;
+    }
+
+    // 2. Fall back to the MEI's registered municipality
+    const profileCity = mei.municipalityIbge
+      ? getMunicipality(mei.municipalityIbge)
+      : undefined;
+    if (profileCity) {
+      return (
+        `Aqui está a informação da NFS-e para a sua cidade cadastrada:\n\n` +
+        summarizeMunicipality(profileCity) +
+        DISCLAIMER
+      );
+    }
+
+    // 3. Generic reply with Portal Nacional highlight + invite to say city
+    const totalCities = listMunicipalities().length;
     return (
-      `A NFS-e depende da sua cidade: cada prefeitura tem seu próprio portal e suas regras. ` +
-      `Me diga a sua cidade que eu te passo o portal oficial.${hint}` +
+      `📄 *NFS-e (Nota Fiscal de Serviços)*\n\n` +
+      `A emissão depende da sua cidade. Muitas já usam o *Portal Nacional do MEI* (Receita Federal):\n` +
+      `• ${PORTAL_NACIONAL_URL}\n\n` +
+      `Me diga a sua cidade que eu te passo o portal certo. ` +
+      `Tenho ${totalCities} cidades cadastradas (SP, RJ, BH, Curitiba, Porto Alegre, Florianópolis e mais).` +
       DISCLAIMER
     );
   }
