@@ -24,6 +24,12 @@ export interface MeiProfile {
   municipalityIbge?: string;
   /** What the MEI does — decides the DAS amount. Set when the user tells us. */
   activity?: MeiActivity;
+  /**
+   * ISO timestamp of a pending LGPD deletion request ("apagar meus
+   * dados"). The request is valid for 24h; the deletion itself only
+   * happens after the user confirms with "sim, apagar".
+   */
+  deleteRequestedAt?: string;
   /** When the MEI was opened (ISO date). Used for the proportional cap. */
   openedAt?: string;
   /** ISO timestamp of the last interaction. */

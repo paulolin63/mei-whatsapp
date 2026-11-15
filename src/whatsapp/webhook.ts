@@ -21,6 +21,16 @@ import {
 } from '../mei/dasAmount';
 import { getMunicipality, summarizeMunicipality, extractCityFromText, listMunicipalities, PORTAL_NACIONAL_URL } from '../mei/nfse';
 import type { MunicipalityNfse } from '../mei/nfse';
+import {
+  isMyDataRequest,
+  isDeleteRequest,
+  isDeleteConfirm,
+  isDeleteRequestPending,
+  buildMyDataReply,
+  buildDeleteRequestReply,
+  buildDeleteDoneReply,
+  buildDeleteNotPendingReply,
+} from '../mei/lgpd';
 import { store } from '../store/db';
 import { downloadMedia } from './client';
 import type {
@@ -203,6 +213,26 @@ export function answerQuestion(phone: string, text: string): string {
   const mei = ensureMei(phone);
   const q = text.toLowerCase();
 
+  // ── LGPD (Art. 18): data access and deletion. Checked FIRST:
+  // "apagar" contains "pagar" as a substring and would otherwise
+  // hit the DAS branch below.
+  if (isDeleteConfirm(text) || ((q === 'sim' || q === 'sim.') && isDeleteRequestPending(mei))) {
+    if (isDeleteRequestPending(mei)) {
+      const result = store.deleteMeiByPhone(phone);
+      return buildDeleteDoneReply(result) + DISCLAIMER;
+    }
+    return buildDeleteNotPendingReply() + DISCLAIMER;
+  }
+  if (isDeleteRequest(text)) {
+    const receipts = store.listReceipts(phone);
+    const deadlines = store.listDeadlines(phone);
+    store.upsertMei({ ...mei, deleteRequestedAt: new Date().toISOString() });
+    return buildDeleteRequestReply(receipts.length, deadlines.length) + DISCLAIMER;
+  }
+  if (isMyDataRequest(text)) {
+    return buildMyDataReply(mei, store.listReceipts(phone)) + DISCLAIMER;
+  }
+
   // Setting the activity: "minha atividade é serviços", "sou comércio",
   // "atividade: ambos". Checked first so the word "atividade" does not
   // fall through to the DAS Q&A below.
@@ -309,6 +339,7 @@ export function answerQuestion(phone: string, text: string): string {
       '• Foto de comprovante → classifico a despesa\n' +
       '• Pergunte quanto é o DAS e quando vence\n' +
       '• NFS-e e teto do MEI — diga sua cidade que eu lembro dela\n' +
+      '• Seus dados: "meus dados" para ver, "apagar meus dados" para apagar\n' +
       '• Lembro você do vencimento do DAS\n\n' +
       'Envie uma foto de um comprovante ou pergunte, por exemplo: "quanto é o DAS?"' +
       DISCLAIMER

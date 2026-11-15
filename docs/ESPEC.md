@@ -38,6 +38,7 @@ instalar, nada de login: foto, texto e lembrete.
 | 2b | **Cálculo do valor do DAS por atividade** — tabela oficial anual (INSS 5% do mínimo + ICMS R$ 1 / ISS R$ 5; Caminhoneiro 12%) | ✅ com testes |
 | 3 | **Lembretes de DAS** — gera aviso quando o vencimento está a até 7 dias | ✅ geração (envio depende de token) |
 | 4 | **Cadastro de NFS-e por município** (20 cidades; MEI emite no Emissor Nacional em qualquer cidade, CGSN 169/2022; portal municipal para cadastro/consulta) | ✅ com testes; códigos IBGE validados |
+| 5 | **Direitos LGPD no WhatsApp** — "meus dados" (ver) e "apagar meus dados" (excluir em dois passos, Art. 18) | ✅ com testes |
 | 5 | **Perguntas e respostas** sobre regras (DAS, NFS-e, teto) via WhatsApp | ✅ stub por palavras-chave |
 | 6 | **Teto anual R$ 81 mil + alerta de desenquadramento** (aviso a partir de 90%) | ✅ cálculo; emissão do alerta depende do faturamento informado |
 | 7 | **Relatório mensal simples** — despesas por categoria no mês | 🔜 v0.2 (dados já são salvos) |
@@ -100,6 +101,7 @@ antes de escrever mais código.
 | Regra fiscal errada → multa para o usuário | Aviso em toda resposta; valores e prazos remetem ao Portal do Empreendedor; revisão humana obrigatória para qualquer número que envolva dinheiro |
 | Regras municipais desatualizadas | Cadastro versionado por cidade, com fonte e data; alerta quando a regra não foi revisada há > 90 dias |
 | Códigos IBGE errados no cadastro → cidade errada na resposta | Códigos validados contra a API do IBGE em 2026-11-15; teste de regressão com a tabela completa em `tests/nfse.test.ts` |
+| Dados pessoais sem direito de acesso/exclusão (LGPD) | Comandos "meus dados" / "apagar meus dados" no WhatsApp; exclusão em dois passos com janela de 24h |
 | WhatsApp Cloud API: custo por conversa e limites de template após 24h | Orçamento por conversa no piloto; mensagens fora da janela de 24h usam template aprovado |
 | LGPD: fotos de comprovantes contêm dados pessoais/fiscais | Dados em store local no piloto; plano: criptografia, exportação e exclusão sob pedido; nunca treinar modelo com dados do usuário sem consentimento |
 | Feriados municipais não modelados no cálculo do vencimento | Feriados nacionais e bancários já estão no calendário (`src/mei/holidays.ts`); municipais entram antes da produção |

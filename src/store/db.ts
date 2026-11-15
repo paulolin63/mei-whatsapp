@@ -59,6 +59,33 @@ export class JsonStore {
     return this.read().meis;
   }
 
+  /**
+   * LGPD deletion (Art. 18): remove the MEI profile and everything
+   * tied to the phone (receipts, deadlines) in one atomic write.
+   * Returns what was actually removed.
+   */
+  deleteMeiByPhone(phone: string): {
+    deletedMei: boolean;
+    deletedReceipts: number;
+    deletedDeadlines: number;
+  } {
+    const data = this.read();
+    const before = {
+      meis: data.meis.length,
+      receipts: data.receipts.length,
+      deadlines: data.deadlines.length,
+    };
+    data.meis = data.meis.filter((m) => m.phone !== phone);
+    data.receipts = data.receipts.filter((r) => r.phone !== phone);
+    data.deadlines = data.deadlines.filter((d) => d.phone !== phone);
+    this.write(data);
+    return {
+      deletedMei: data.meis.length < before.meis,
+      deletedReceipts: before.receipts - data.receipts.length,
+      deletedDeadlines: before.deadlines - data.deadlines.length,
+    };
+  }
+
   // -- Receipts ------------------------------------------------------------
 
   addReceipt(receipt: Omit<Receipt, 'id' | 'createdAt'>): Receipt {

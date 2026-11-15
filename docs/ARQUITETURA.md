@@ -42,7 +42,7 @@ Express; o store nunca é acessado fora de `store/db.ts`.
 | `src/config.ts` | Variáveis de ambiente com defaults seguros | dotenv |
 | `src/types.ts` | Tipos de domínio (sem imports de framework) | — |
 | `src/whatsapp/client.ts` | Envio de texto via Graph API; no-op com log se não configurado | fetch global, config |
-| `src/whatsapp/webhook.ts` | Parse do payload da Meta; roteamento texto/foto; Q&A por palavras-chave (inclui valor do DAS e gravação da atividade e da cidade) | classify, ocr, das, dasAmount, nfse, store |
+| `src/whatsapp/webhook.ts` | Parse do payload da Meta; roteamento texto/foto; Q&A por palavras-chave (inclui valor do DAS, gravação da atividade e da cidade, e direitos LGPD: ver e apagar dados) | classify, ocr, das, dasAmount, nfse, lgpd, store |
 | `src/mei/das.ts` | Regras do DAS: dia 20, dia útil, teto R$ 81 mil, proporcional | — |
 | `src/mei/dasAmount.ts` | Valor do DAS por atividade (tabela oficial anual, mínimo por decreto) | das, types |
 | `src/mei/nfse.ts` | Cadastro de NFS-e por município (20 cidades; MEI sempre no Emissor Nacional, portal municipal p/ cadastro e consulta) | — |
@@ -91,6 +91,17 @@ Express; o store nunca é acessado fora de `store/db.ts`.
   → parseSetCityCommand() → grava municipalityIbge → confirma + resumo da cidade
   (cidade fora do cadastro: responde o Emissor Nacional mesmo assim,
   pois a emissão do MEI não depende da cidade)
+```
+
+```
+"meus dados"
+  → buildMyDataReply(perfil, comprovantes): resumo do que está guardado
+
+"apagar meus dados"
+  → grava deleteRequestedAt no perfil → pede confirmação ("sim, apagar", 24h)
+
+"sim, apagar"
+  → deleteMeiByPhone(): apaga perfil + comprovantes + prazos num só write
 ```
 
 ## 5. Fluxo de mensagem (foto de comprovante)
@@ -221,6 +232,9 @@ DAS na mensagem; sem atividade, mantém o aviso de conferir no Portal.
   API do IBGE (2026-11-15) e travados por teste de regressão. URLs dos
   portais municipais não são re-verificadas a cada resposta — confirme
   no portal antes de emitir.
+- A exclusão LGPD apaga perfil, comprovantes e prazos de store.json.
+  Cópias de segurança do arquivo, se existirem fora do piloto, não
+  são apagadas por este comando.
 - O classificador é por palavras-chave e erra em texto ambíguo — a
   confiança e as palavras-base são mostradas ao usuário justamente
   para ele corrigir.

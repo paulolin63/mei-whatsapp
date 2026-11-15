@@ -36,6 +36,10 @@ está — o WhatsApp — e fala a língua dele: foto, áudio e texto curto.
   (Receita Federal) em qualquer cidade, desde 09/2023 (CGSN 169/2022);
   diga "minha cidade é Marília" para gravar a sua e ver o portal da
   prefeitura (cadastro e consulta).
+- **Seus dados (LGPD, Art. 18)** — "meus dados" mostra tudo o que está
+  guardado (perfil, atividade, cidade, comprovantes); "apagar meus
+  dados" apaga tudo em dois passos (pedido + confirmação "sim, apagar"
+  em até 24h).
 - **Alerta de teto** — avisa a partir de 90% do faturamento anual.
 
 ## Como rodar
@@ -94,13 +98,16 @@ tests/
   das.test.ts              Testes das regras do DAS (node:test)
   dasAmount.test.ts        Testes do valor do DAS por atividade
   holidays.test.ts         Testes do calendário de feriados
+  lgpd.test.ts             Testes dos direitos LGPD (ver e apagar dados)
   nfse.test.ts             Testes do cadastro de NFS-e (inclui tabela IBGE)
   ocr.test.ts              Testes do OCR (stub + Gemini)
+  store.test.ts            Testes da exclusão LGPD no store
   webhook.test.ts          Testes das respostas do DAS no WhatsApp
   reminders.test.ts        Testes do lembrete de DAS com valor
 docs/
   ESPEC.md                 Especificação do produto e plano de validação
   ARQUITETURA.md           Componentes, fluxos e modelo de dados
+  WHATSAPP_TEMPLATE.md     Template "lembrete_das_vencimento" (Utility) para lembretes ativos
 ```
 
 ## Roadmap
@@ -108,8 +115,9 @@ docs/
 - **v0.2** — Classificação de despesas com LLM, histórico de despesas
   por mês. (OCR real e download de mídia já entraram via Gemini.)
 - **v0.3** — DASN-SIMEI (declaração anual), pagamento via link/boleto.
-- **v1.0** — Postgres, multi-tenant, fila de envio, LGPD (exportar/apagar
-  dados), cobrança R$ 19–29/mês.
+- **v1.0** — Postgres, multi-tenant, fila de envio (lembretes ativos via
+  template aprovado), cobrança R$ 19–29/mês. (LGPD exportar/apagar já
+  feito; template de lembrete já redigido em docs/WHATSAPP_TEMPLATE.md.)
 
 ## Aviso legal (leia antes de usar)
 
